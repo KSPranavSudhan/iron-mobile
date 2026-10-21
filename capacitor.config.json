@@ -1,0 +1,7 @@
+{
+  "appId": "com.ironreader.app",
+  "appName": "Iron Reader",
+  "webDir": "www",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": false }
+}

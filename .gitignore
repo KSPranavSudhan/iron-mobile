@@ -1,0 +1,9 @@
+node_modules/
+www/
+iron_signing_key.pem
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.pyc
+__pycache__/

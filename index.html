@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0A0E17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Iron Reader">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Iron Assay — Concentration Reader</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="panel-header">
+    <div class="logo-hex" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M9 2h6M10 2v5.6L5 15.5A2.8 2.8 0 0 0 7.4 20h9.2a2.8 2.8 0 0 0 2.4-4.5L14 7.6V2"/>
+        <path d="M7.2 14.5h9.6"/>
+      </svg>
+    </div>
+    <div class="eyebrow">1,10-PHENANTHROLINE COLORIMETRIC ASSAY</div>
+    <h1>Iron Concentration Reader</h1>
+    <p class="sub">Runs entirely on this phone — no upload. Photograph the sample tube together with the 9-patch reference card.</p>
+    <button type="button" class="model-chip" id="model-chip" aria-label="Model and updates">
+      <span class="dot" id="chip-dot"></span><span id="chip-text">Model …</span>
+      <span class="chip-badge" id="chip-update" hidden>update</span>
+    </button>
+  </header>
+
+  <main>
+    <section class="capture-card" id="capture-card">
+      <div class="card-heading">
+        <svg class="heading-icon icon-blue" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>SAMPLE CAPTURE</span>
+      </div>
+
+      <div class="capture-grid">
+        <div class="capture-zone" id="capture-zone">
+          <div id="preview-empty" class="capture-empty">
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+            </svg>
+            <strong>No photo selected yet</strong>
+            <span>Hold the phone <b>landscape</b>, in the lightbox, with the tube and the full 9-patch card in frame. Use the normal camera at full resolution.</span>
+          </div>
+          <img id="dropzone-thumb" class="capture-preview" alt="Selected photo" hidden>
+        </div>
+
+        <div class="capture-actions">
+          <label class="btn-capture" for="file-input-camera" id="btn-camera">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            Take Photo
+          </label>
+          <label class="btn-capture btn-capture-secondary" for="file-input-gallery" id="btn-gallery">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            Choose from Gallery
+          </label>
+          <button type="button" class="btn-clear" id="clear-btn" hidden>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>
+            Clear
+          </button>
+        </div>
+        <!-- "capture" opens the phone's own camera app (full-resolution photo WITH EXIF); the plain input opens the gallery. -->
+        <input type="file" id="file-input-camera" accept="image/*" capture="environment" hidden>
+        <input type="file" id="file-input-gallery" accept="image/*" hidden>
+      </div>
+
+      <div class="photo-note" id="photo-note" hidden></div>
+
+      <button id="analyze-btn" class="btn-primary" disabled>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.7 5.3L19 9l-5.3 1.7L12 16l-1.7-5.3L5 9l5.3-1.7z"/></svg>
+        Analyze Sample
+      </button>
+      <div class="secure-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>
+        Processed on-device. Your photo never leaves this phone.
+      </div>
+    </section>
+
+    <section class="update-banner" id="update-banner" hidden>
+      <div><strong id="ub-title">Model update available</strong><p id="ub-text"></p></div>
+      <button type="button" class="btn-mini" id="ub-review">Review</button>
+    </section>
+
+    <section class="readout-card" id="readout-card" hidden>
+      <div class="card-heading result-heading">
+        <div class="heading-left">
+          <svg class="heading-icon icon-green" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>
+          <span>RESULT</span>
+        </div>
+        <div class="badge badge-ok" id="range-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+          <span id="range-badge-text">Within calibrated range</span>
+        </div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result-main">
+          <div class="readout-label">IRON CONCENTRATION</div>
+          <div class="readout-display"><span id="readout-value">--.--</span><span class="readout-unit">mg/L</span></div>
+        </div>
+        <div class="result-details">
+          <div class="detail-row"><span class="detail-label">Uncertainty (MAE)</span><span class="detail-value accent" id="detail-uncertainty">—</span></div>
+          <div class="detail-row"><span class="detail-label">Device Detected</span><span class="detail-value" id="detail-device">—</span></div>
+          <div class="detail-row"><span class="detail-label">Calibration Status</span><span class="badge badge-ok badge-sm" id="detail-cal-status">Calibrated</span></div>
+          <div class="detail-row"><span class="detail-label">Calibrated Range</span><span class="detail-value" id="detail-range">—</span></div>
+          <div class="detail-row"><span class="detail-label">Model</span><span class="detail-value" id="detail-model">—</span></div>
+        </div>
+      </div>
+
+      <div class="info-banner" id="info-banner">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <div><strong id="banner-title">Good to go!</strong><p id="banner-detail"></p></div>
+      </div>
+
+      <details class="detect-details">
+        <summary>What the app detected</summary>
+        <canvas id="overlay" aria-label="Detected tube region and reference patches"></canvas>
+        <p class="detect-legend"><span class="sw sw-roi"></span> liquid region &nbsp; <span class="sw sw-patch"></span> reference patches &nbsp; <span id="detect-meta"></span></p>
+      </details>
+
+      <button id="reset-btn" class="btn-secondary">New sample</button>
+    </section>
+
+    <section class="error-card" id="error-card" hidden>
+      <div class="error-title">Could not read this sample</div>
+      <div class="error-detail" id="error-detail"></div>
+      <button id="error-reset-btn" class="btn-secondary">Try again</button>
+    </section>
+
+    <div class="status-line" id="status-line" hidden>Analyzing sample…</div>
+  </main>
+
+  <footer>
+    <div>Results are displayed in mg/L (milligrams per liter).</div>
+    <div id="footer-status">App v1</div>
+  </footer>
+
+  <!-- Model & updates sheet -->
+  <dialog id="sheet" class="sheet">
+    <form method="dialog" class="sheet-head"><strong>Model &amp; updates</strong><button class="btn-x" aria-label="Close">✕</button></form>
+    <div class="sheet-body">
+      <div class="kv"><span>Active model</span><b id="s-version">—</b></div>
+      <div class="kv"><span>Source</span><b id="s-source">—</b></div>
+      <div class="kv"><span>Released</span><b id="s-released">—</b></div>
+      <div class="kv"><span>Equation</span><b id="s-eq" class="mono">—</b></div>
+      <div class="kv"><span>Training</span><b id="s-train">—</b></div>
+      <p class="sheet-note" id="s-notes"></p>
+
+      <div class="sheet-sep"></div>
+      <div class="update-box" id="s-update" hidden>
+        <strong id="s-update-title"></strong>
+        <p id="s-update-notes"></p>
+        <button type="button" class="btn-primary btn-tight" id="s-install">Install update</button>
+      </div>
+      <button type="button" class="btn-secondary btn-tight" id="s-check">Check for updates</button>
+      <div class="sheet-status" id="s-status" role="status"></div>
+
+      <div class="sheet-row">
+        <button type="button" class="btn-secondary btn-tight" id="s-rollback" hidden>Roll back to previous</button>
+        <button type="button" class="btn-secondary btn-tight" id="s-reset" hidden>Reset to built-in</button>
+      </div>
+      <button type="button" class="btn-secondary btn-tight" id="s-install-app" hidden>Install app on this phone</button>
+      <p class="sheet-note" id="s-install-hint" hidden>iPhone: tap Share, then “Add to Home Screen”.</p>
+      <div class="sheet-sep"></div>
+      <div class="kv"><span>App version</span><b id="s-app">—</b></div>
+      <div class="kv"><span>Update source</span><b id="s-url" class="mono small">—</b></div>
+      <div class="kv"><span>Updates signed</span><b id="s-signed">—</b></div>
+      <div class="kv"><span>Works offline</span><b id="s-offline">—</b></div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="pipeline.js"></script>
+  <script src="exif.js"></script>
+  <script src="bundle.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

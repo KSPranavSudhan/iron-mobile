@@ -1,0 +1,20 @@
+{
+  "name": "iron-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-device smartphone colorimetric iron reader (PWA)",
+  "scripts": {
+    "test": "node tests/parity.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "devDependencies": {
+    "@techstark/opencv-js": "^4.12.0-release.1",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2"
+  }
+}
