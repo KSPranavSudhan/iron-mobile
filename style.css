@@ -451,6 +451,7 @@ footer {
   .capture-actions {
     flex-direction: column;
   }
+  .capture-actions .btn-capture { flex: 0 0 auto; }   /* column layout: the 160px flex-basis would become a 160px height */
   .result-grid {
     grid-template-columns: 1fr;
   }
@@ -510,3 +511,23 @@ body { padding-top: max(32px, env(safe-area-inset-top)); padding-bottom: max(40p
 
 .toast { position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
   background: #1c2432; border: 1px solid var(--line); color: var(--ink); padding: 11px 16px; border-radius: 12px; font-size: 13px; max-width: calc(100vw - 32px); box-shadow: 0 14px 30px -10px rgba(0,0,0,.6); }
+
+/* camera-settings check */
+.settings-check { margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2); }
+.settings-check.ok { border-color: var(--ok-border); background: var(--ok-bg); }
+.settings-check.close, .settings-check.unknown { border-color: rgba(240, 201, 135, 0.35); background: rgba(240, 201, 135, 0.07); }
+.settings-check.fail { border-color: rgba(239, 106, 95, 0.45); background: rgba(239, 106, 95, 0.08); }
+.sc-head { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.sc-icon { font-weight: 800; width: 18px; text-align: center; }
+.settings-check.ok .sc-icon { color: var(--ok); } .settings-check.fail .sc-icon { color: var(--err); } .settings-check.close .sc-icon, .settings-check.unknown .sc-icon { color: #F0C987; }
+.sc-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.sc-list li { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-soft); }
+.sc-list li b { font-weight: 600; color: var(--ink); text-align: right; }
+.sc-list li.fail b { color: var(--err); } .sc-list li.close b, .sc-list li.unknown b { color: #F0C987; } .sc-list li.ok b { color: var(--ok); }
+.sc-list li small { color: var(--ink-faint); font-weight: 400; }
+.sc-hint { margin: 8px 0 0; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+.btn-link { margin-top: 8px; padding: 0; border: none; background: none; color: var(--ink-soft); font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+.cap-list { margin: 12px 0 4px; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; line-height: 1.45; }
+.cap-list li::marker { color: var(--reagent); font-weight: 700; }
+.cap-confirm { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.cap-confirm input { width: 20px; height: 20px; accent-color: var(--blue); }

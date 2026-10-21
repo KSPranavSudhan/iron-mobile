@@ -54,6 +54,26 @@
     if (!Array.isArray(b.calibrated_range) || b.calibrated_range.length !== 2 || !b.calibrated_range.every(fin) || !(b.calibrated_range[0] < b.calibrated_range[1])) errs.push('calibrated_range must be [low, high]');
     if (!b.uncertainty || !fin(b.uncertainty.same_family_mae) || !fin(b.uncertainty.cross_brand_mae)) errs.push('uncertainty.same_family_mae / cross_brand_mae missing');
     if (!Array.isArray(b.reference_device_names) || !b.reference_device_names.every((s) => typeof s === 'string')) errs.push('reference_device_names must be a list of strings');
+    // optional: models that skip the card correction, honest error table, range tolerance
+    if (b.correction != null && !(b.correction && Array.isArray(b.correction.skip_for_models) && b.correction.skip_for_models.every((t) => typeof t === 'string' && t.length >= 4))) errs.push('correction.skip_for_models must be a list of model-name substrings (>= 4 chars)');
+    if (b.uncertainty && b.uncertainty.by_band != null) {
+      const u = b.uncertainty.by_band, n = Array.isArray(u.edges) ? u.edges.length + 1 : -1;
+      if (n < 2 || !finArr(u.edges, 1) || !finArr(u.same_family, n) || !finArr(u.cross_brand, n) || u.same_family.length !== n || u.cross_brand.length !== n) errs.push('uncertainty.by_band needs edges[k] and same_family/cross_brand with k+1 numbers');
+    }
+    if (b.range_tolerance != null && !(fin(b.range_tolerance) && b.range_tolerance >= 0 && b.range_tolerance <= 0.5)) errs.push('range_tolerance must be between 0 and 0.5');
+    // optional camera-capture requirements (shown before the camera opens, checked against EXIF afterwards)
+    if (b.capture != null) {
+      const c = b.capture, rng = (r) => Array.isArray(r) && r.length === 2 && r.every(fin) && r[0] <= r[1];
+      if (typeof c !== 'object') errs.push('capture must be an object');
+      else {
+        for (const k of ['iso', 'exposure_time_s', 'exposure_bias_ev', 'focal_35mm']) {
+          if (c[k] != null && (!rng(c[k].allowed) || (c[k].target != null && !rng(c[k].target)))) errs.push(`capture.${k} needs allowed:[lo,hi] (and optional target)`);
+        }
+        if (c.checklist != null && !(Array.isArray(c.checklist) && c.checklist.every((t) => typeof t === 'string'))) errs.push('capture.checklist must be a list of strings');
+        if (c.max_digital_zoom != null && !fin(c.max_digital_zoom)) errs.push('capture.max_digital_zoom must be a number');
+        if (c.min_width != null && !fin(c.min_width)) errs.push('capture.min_width must be a number');
+      }
+    }
     // self-test: the bundle must reproduce its own claimed predictions
     if (!errs.length) {
       if (!Array.isArray(b.selftest) || b.selftest.length < 2) errs.push('selftest needs at least 2 vectors');

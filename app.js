@@ -116,7 +116,10 @@
 
   // ---------------------------------------------------------------- photo selection
   async function loadBitmap(file) {
-    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    // colorSpaceConversion:'none' is REQUIRED: Nord / iQOO photos carry a Display P3 profile. OpenCV (which the model was
+    // trained with) ignores it and reads the raw JPEG values; letting the browser convert to sRGB shifts the colours and
+    // the readings by up to ~0.12 mg/L. With 'none' the pixels are bit-identical to cv2.imdecode (verified on real photos).
+    try { return await createImageBitmap(file, { imageOrientation: 'from-image', colorSpaceConversion: 'none' }); }
     catch (e) {
       return await new Promise((res, rej) => { // <img> applies EXIF orientation by default in current browsers
         const url = URL.createObjectURL(file), im = new Image();
@@ -127,7 +130,7 @@
     }
   }
 
-  async function setSelectedFile(file) {
+  async function setSelectedFile(file, source) {
     resetResultViews();
     if (sel && sel.bitmap && sel.bitmap.close) sel.bitmap.close();
     sel = null;
@@ -145,6 +148,9 @@
       else if (w < 3000) msgs.push(`Photo is only ${w}×${h}. The app was validated on ~4096×3072 photos; shared/compressed copies (WhatsApp etc.) can give wrong readings. Use the original.`);
       if (!exif.present) msgs.push('No camera metadata (EXIF) found, so the phone model can’t be identified; the cross-brand error estimate will be used.');
       if (msgs.length) { note.textContent = msgs.join(' '); note.hidden = false; }
+      sel.source = source; sel.override = false;
+      sel.check = Exif.checkCaptureSettings(exif, activeInfo().bundle.capture, [w, h]);
+      renderSettingsCheck();
     } catch (e) {
       showError('This image could not be opened. Try a JPEG photo.');
     }
@@ -156,6 +162,52 @@
     $('file-input-camera').value = ''; $('file-input-gallery').value = '';
     const th = $('dropzone-thumb'); th.hidden = true; th.removeAttribute('src');
     $('preview-empty').hidden = false; $('clear-btn').hidden = true; $('analyze-btn').disabled = true; $('photo-note').hidden = true;
+    $('settings-check').hidden = true; setAnalyzeLabel('Analyze Sample');
+  }
+
+  // ---------------------------------------------------------------- camera settings (checklist + EXIF verification)
+  const SC_TEXT = {
+    ok: ['✓', 'Camera settings match the validated setup'],
+    close: ['!', 'Camera settings are close to the validated setup'],
+    unknown: ['?', 'Camera settings can’t be verified for this photo'],
+    fail: ['✕', 'Camera settings differ from the validated setup'],
+  };
+  function setAnalyzeLabel(t) { const b = $('analyze-btn'); b.lastChild.textContent = ' ' + t; }
+
+  function renderSettingsCheck() {
+    const box = $('settings-check'), c = sel && sel.check;
+    if (!c || c.status === 'unchecked') { box.hidden = true; return; }
+    box.hidden = false; box.className = 'settings-check ' + c.status;
+    $('sc-icon').textContent = SC_TEXT[c.status][0]; $('sc-title').textContent = SC_TEXT[c.status][1];
+    const ul = $('sc-list'); ul.textContent = '';
+    for (const it of c.items) {
+      const li = document.createElement('li'); li.className = it.status;
+      const a = document.createElement('span'); a.textContent = it.label + ' ';
+      const sm = document.createElement('small'); sm.textContent = `(needs ${it.expected})`; a.appendChild(sm);
+      const b = document.createElement('b'); b.textContent = it.value;
+      li.append(a, b); ul.appendChild(li);
+    }
+    const hint = $('sc-hint'), ov = $('sc-override');
+    if (c.status === 'fail') {
+      hint.textContent = 'Retake the photo with the settings marked in red. Readings from other settings were never validated and can be badly off.';
+      ov.hidden = sel.override; $('analyze-btn').disabled = !sel.override;
+      setAnalyzeLabel(sel.override ? 'Analyze (not validated)' : 'Retake with the settings above');
+    } else if (c.status === 'unknown') {
+      hint.textContent = 'This photo has no (or incomplete) camera data — typical for shared or edited copies. Use the original photo from the camera if you can.';
+      ov.hidden = true; $('analyze-btn').disabled = false; setAnalyzeLabel('Analyze Sample');
+    } else {
+      hint.textContent = c.status === 'close' ? 'Within tolerance, but not exactly the reference settings.' : '';
+      ov.hidden = true; $('analyze-btn').disabled = false; setAnalyzeLabel('Analyze Sample');
+    }
+  }
+
+  function openCaptureSheet() {
+    const req = activeInfo().bundle.capture;
+    if (!req || !Array.isArray(req.checklist) || !req.checklist.length) { $('file-input-camera').click(); return; }
+    const ol = $('cap-list'); ol.textContent = '';
+    for (const t of req.checklist) { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); }
+    $('cap-confirm').checked = false; $('cap-open').disabled = true;
+    $('capture-sheet').showModal();
   }
 
   // ---------------------------------------------------------------- analysis
@@ -190,6 +242,7 @@
 
   async function analyze() {
     if (!sel) return;
+    if (sel.check && sel.check.status === 'fail' && !sel.override) return;   // must retake (or explicitly override)
     const btn = $('analyze-btn'); btn.disabled = true;
     const sl = $('status-line'); sl.hidden = false; sl.textContent = 'Starting engine…';
     $('error-card').hidden = true; $('readout-card').hidden = true;
@@ -208,11 +261,14 @@
   }
 
   function showResult(data, bundle, source) {
+    self.__lastResult = data;   // handy for tests / debugging in the browser console
     $('capture-card').hidden = true; $('readout-card').hidden = false;
-    $('readout-value').textContent = data.concentration_mg_per_l.toFixed(2);
+    // readings just below 0 (e.g. -0.03 on a blank) are noise around zero: show 0.00 and say so
+    const below = data.concentration_mg_per_l < 0 && data.in_calibrated_range;   // only within the tolerance band
+    $('readout-value').textContent = (below ? 0 : data.concentration_mg_per_l).toFixed(2);
     const dm = data.device_detected, mk = dm.make || '';
     const dev = dm.model ? (mk && dm.model.toLowerCase().startsWith(mk.toLowerCase()) ? dm.model : `${mk} ${dm.model}`.trim()) : 'Unidentified';
-    $('detail-uncertainty').textContent = `± ${data.uncertainty_mae_mg_per_l.toFixed(3)} mg/L`;
+    $('detail-uncertainty').textContent = `± ${data.uncertainty_mae_mg_per_l.toFixed(2)} mg/L`;
     $('detail-device').textContent = dev;
     $('detail-range').textContent = `${data.calibrated_range[0]} – ${data.calibrated_range[1]} mg/L`;
     $('detail-model').textContent = `v${bundle.version}${source === 'updated' ? ' (updated)' : ''}`;
@@ -228,6 +284,19 @@
       rb.classList.remove('badge-ok'); rb.classList.add('warn'); $('range-badge-text').textContent = 'Outside calibrated range';
       ib.classList.add('warn'); $('banner-title').textContent = 'Extrapolated result';
       $('banner-detail').textContent = data.warning || 'This reading falls outside the calibrated range and has been extrapolated.';
+    }
+    if (below && data.in_calibrated_range) {
+      $('banner-detail').textContent = `Raw reading ${data.concentration_mg_per_l.toFixed(3)} mg/L — at blank level (no detectable iron). ${data.warning || ''}`.trim();
+    }
+    // camera-settings verdict for this photo
+    const sc = sel && sel.check, ds = $('detail-settings');
+    const scLabel = { ok: 'Verified', close: 'Close to validated', unknown: 'Not verifiable', fail: 'Outside validated', unchecked: 'Not checked' };
+    ds.textContent = sc ? scLabel[sc.status] : 'Not checked';
+    ds.classList.toggle('badge-ok', !!sc && sc.status === 'ok'); ds.classList.toggle('warn', !sc || sc.status !== 'ok');
+    if (sc && sc.status === 'fail') {
+      const bad = sc.items.filter((i) => i.status === 'fail').map((i) => `${i.label.toLowerCase()} ${i.value}`).join(', ');
+      ib.classList.add('warn'); $('banner-title').textContent = 'Not validated — camera settings differ';
+      $('banner-detail').textContent = `This photo was taken with ${bad}, outside the settings the model was validated on. Treat the reading as indicative only. ${data.warning || ''}`.trim();
     }
     $('detect-meta').textContent = `${data.roi_method} · ${(data.elapsed_ms / 1000).toFixed(1)} s on-device`;
     drawOverlay(data);
@@ -268,8 +337,12 @@
     startWorker();
 
     // events
-    $('file-input-camera').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f); });
-    $('file-input-gallery').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f); });
+    $('file-input-camera').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f, 'camera'); });
+    $('file-input-gallery').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f, 'gallery'); });
+    $('btn-camera').addEventListener('click', openCaptureSheet);
+    $('cap-confirm').addEventListener('change', (e) => { $('cap-open').disabled = !e.target.checked; });
+    $('cap-open').addEventListener('click', () => { $('capture-sheet').close(); $('file-input-camera').click(); });
+    $('sc-override').addEventListener('click', () => { if (sel) { sel.override = true; renderSettingsCheck(); } });
     $('clear-btn').addEventListener('click', (e) => { e.preventDefault(); clearSelectedFile(); });
     $('analyze-btn').addEventListener('click', analyze);
     $('reset-btn').addEventListener('click', resetToCapture);

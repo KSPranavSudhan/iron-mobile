@@ -1,0 +1,31 @@
+{
+  "_about": "Merged into every model bundle by tools/model_tool.py --extras-json. Numbers measured on the 489 real photos (Nord: leave-one-session-out; Poco/Samsung/iqoo/random never used for fitting). See tests/final_eval.py and tests/exif_scan.py.",
+  "correction": {
+    "skip_for_models": ["oneplus nord ce4", "ac2001"]
+  },
+  "uncertainty": {
+    "same_family_mae": 0.10,
+    "cross_brand_mae": 0.23,
+    "by_band": { "edges": [0.75, 1.75], "same_family": [0.05, 0.10, 0.19], "cross_brand": [0.11, 0.30, 0.45] }
+  },
+  "range_tolerance": 0.1,
+  "capture": {
+    "iso": { "target": [80, 100], "allowed": [25, 160] },
+    "exposure_time_s": { "target": [0.0095, 0.0105], "allowed": [0.008, 0.0125] },
+    "white_balance": "manual",
+    "flash": "off",
+    "exposure_bias_ev": { "allowed": [-0.35, 0.35] },
+    "max_digital_zoom": 1.1,
+    "focal_35mm": { "allowed": [22, 30] },
+    "min_width": 3600,
+    "checklist": [
+      "Camera app in Pro / Manual mode (not Auto, Portrait, Night or AI scene).",
+      "ISO 80–100, fixed — not Auto ISO.",
+      "Shutter speed 1/100 s.",
+      "White balance fixed (not AWB / Auto) — use the same setting every time.",
+      "Flash off. HDR, filters and beauty mode off.",
+      "Main camera at 1x — no zoom, wide or macro lens. Standard 12 MP photo size.",
+      "Phone held landscape; tube and the whole 9-patch card in frame; lightbox closed, lamp on."
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 /* App configuration. Edit this file when you deploy. */
 self.IRON_CONFIG = {
   // Bump when the app CODE changes in a way that bundles may depend on (bundle.min_app_version is checked against it).
-  APP_VERSION: 1,
+  APP_VERSION: 2,
 
   // Where the app looks for model updates. Relative = same host as the app; or an absolute URL
   // (GitHub Pages / raw.githubusercontent.com / your own server -- must allow CORS and be HTTPS).

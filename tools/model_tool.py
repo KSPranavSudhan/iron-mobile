@@ -90,6 +90,12 @@ def build_bundle(args):
         "training": {"n_photos": args.n_photos, "note": args.training_note or ""},
         "selftest": [{"x": x, "y": predict(model, x)} for x in xs],
     }
+    if args.extras_json:  # capture requirements, correction policy, uncertainty table, range tolerance (see model/bundle_extras.json)
+        extras = json.loads(Path(args.extras_json).read_text())
+        for k, v in extras.items():
+            if k.startswith("_"): continue
+            if k == "uncertainty": bundle["uncertainty"].update(v)
+            else: bundle[k] = v
     return bundle
 
 
@@ -115,6 +121,7 @@ def add_bundle_args(p):
     p.add_argument("--reference-device", action="append", help="lowercase substring of 'make model'; repeatable")
     p.add_argument("--n-photos", type=int, default=None)
     p.add_argument("--training-note")
+    p.add_argument("--extras-json", help="JSON merged into the bundle: capture, correction, uncertainty, range_tolerance")
 
 
 def cmd_export(a):

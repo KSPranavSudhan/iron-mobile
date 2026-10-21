@@ -509,7 +509,7 @@
         const refPatches = bundle.reference_patches;
         const names = bundle.reference_device_names || [];
         const same = isReferenceFamily({ make: device.make, model: device.model }, names) && !!device.present;
-        let corrected, calibrated, warning = null, slope = null, resid = null;
+        let corrected, calibrated, warning = null, slope = null, resid = null, skipped = false;
         if (!refPatches || Object.values(refPatches).some((v) => v == null)) {
           corrected = rawFeature; calibrated = false;
           warning = "Reference patch data isn't configured in this model, so no device correction was applied. This reading is uncorrected and may be biased.";
@@ -518,19 +518,31 @@
           const fit = huberFit(xs, ys);
           slope = fit.slope;
           resid = xs.map((x, i) => fit.slope * x + fit.intercept - ys[i]);
-          corrected = slope * rawFeature;
+          // Validated Nord-family models skip the card correction: on them the per-photo card slope is mostly
+          // shot-to-shot noise (sd ~0.08-0.12 around 1.0) and applying it raised error from ~0.10 to ~0.15-0.19 mg/L
+          // (leave-one-session-out on 349 Nord photos; held-out AC2001 unit 0.185 -> 0.104). Cross-brand phones keep it.
+          const skipList = (bundle.correction && bundle.correction.skip_for_models) || [];
+          skipped = !!device.present && isReferenceFamily({ make: device.make, model: device.model }, skipList);
+          corrected = skipped ? rawFeature : slope * rawFeature;
           calibrated = same;
           if (!device.present) {
             warning = 'No camera metadata was found in this photo (common when a photo has been shared or edited), so the device couldn\'t be identified. A cross-brand correction was applied via the reference card; the error estimate below defaults to the cross-brand figure.';
           } else if (!calibrated) {
-            warning = `Device '${device.make || ''} ${device.model || ''}' isn't the reference device family. A cross-brand correction was applied via the reference card; typical error 0.19-0.29 mg/L based on phones validated so far -- not individually validated for this specific device.`;
+            warning = `Device '${device.make || ''} ${device.model || ''}' isn't the reference device family. A cross-brand correction was applied via the reference card; the error estimate is the average over the other phone brands validated so far -- not individually validated for this specific device.`;
           }
         }
 
         const conc = predictValue(bundle.model, corrected);
         const range = bundle.calibrated_range;
-        const inRange = conc >= range[0] && conc <= range[1];
-        const mae = calibrated ? bundle.uncertainty.same_family_mae : bundle.uncertainty.cross_brand_mae;
+        const tol = bundle.range_tolerance || 0;   // readings like -0.03 at a blank are normal noise, not extrapolation
+        const inRange = conc >= range[0] - tol && conc <= range[1] + tol;
+        // honest error estimate: measured MAE for this phone category AND this concentration level when available
+        const U = bundle.uncertainty, cat = calibrated ? 'same_family' : 'cross_brand';
+        let mae = calibrated ? U.same_family_mae : U.cross_brand_mae;
+        if (U.by_band && Array.isArray(U.by_band[cat])) {
+          let b = 0; while (b < U.by_band.edges.length && conc >= U.by_band.edges[b]) b++;
+          mae = U.by_band[cat][b];
+        }
         if (!inRange) {
           const note = `Prediction falls outside the card's calibrated ${range[0].toFixed(1)}-${range[1].toFixed(1)} mg/L range -- treat as extrapolated and unreliable.`;
           warning = warning ? `${warning} ${note}` : note;
@@ -551,7 +563,7 @@
           roi_box: roi,
           // extras beyond the Python response (used by the UI overlay and by parity tests)
           debug: {
-            raw_feature: rawFeature, corrected_feature: corrected, patch_slope: slope, patch_residuals: resid,
+            raw_feature: rawFeature, corrected_feature: corrected, patch_slope: slope, patch_residuals: resid, correction_skipped: skipped,
             patch_logbg: photoPatches, patch_boxes: pc.boxes, patch_threshold: pc.threshold,
             work_size: [W, H], scale, features: feats,
           },
