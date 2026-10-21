@@ -1,0 +1,43 @@
+name: Build Android APK
+on:
+  workflow_dispatch:        # Actions tab -> "Build Android APK" -> Run workflow
+  push:
+    branches: [main]
+    paths-ignore: ['model/**', '**.md', 'tests/**']   # publishing a new model must NOT rebuild the app
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm ci --omit=dev
+
+      # Settings baked into the APK. Set them in: repo Settings -> Secrets and variables -> Actions -> Variables
+      - name: Build web assets
+        env:
+          UPDATE_MANIFEST_URL: ${{ vars.UPDATE_MANIFEST_URL }}
+          UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
+        run: node tools/build_www.mjs
+      - run: npx cap sync android
+
+      # Optional stable signing key (secrets). Without it a debug-signed APK is built.
+      - name: Decode keystore
+        env: { KS_B64: "${{ secrets.ANDROID_KEYSTORE_B64 }}" }
+        run: |
+          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/iron.jks"; echo "KEYSTORE_PATH=$RUNNER_TEMP/iron.jks" >> "$GITHUB_ENV"; echo "SIGNED=1" >> "$GITHUB_ENV"; fi
+      - name: Gradle build
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          chmod +x gradlew
+          if [ "$SIGNED" = "1" ]; then ./gradlew assembleRelease --no-daemon; else ./gradlew assembleDebug --no-daemon; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IronReader-apk
+          path: android/app/build/outputs/apk/**/*.apk

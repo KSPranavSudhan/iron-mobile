@@ -1,0 +1,65 @@
+{
+  "calibrated_range": [
+    0.0,
+    2.5
+  ],
+  "min_app_version": 1,
+  "model": {
+    "coef": -24.771233148315247,
+    "intercept": -0.1424422693795289,
+    "type": "linear"
+  },
+  "notes": "Initial model: HuberRegressor on card-corrected log10(B/G) background-normalised feature. Trained on 349 OnePlus Nord CE4 photos (0.0-2.5 mg/L).",
+  "reference_device_names": [
+    "nord",
+    "ac2001"
+  ],
+  "reference_patches": {
+    "0.0": 0.04728273293401176,
+    "0.2": 0.03943797024802862,
+    "0.5": 0.024804658325232796,
+    "1.0": 0.002786914364975578,
+    "1.5": -0.011474343038940626,
+    "2.0": -0.03069529722631286,
+    "2.5": -0.04057526085352716,
+    "GRAY": 0.013455927817877392,
+    "WHITE": 0.010700640560688524
+  },
+  "released": "2026-10-21",
+  "schema": 1,
+  "selftest": [
+    {
+      "x": -0.3,
+      "y": 7.288927675115044
+    },
+    {
+      "x": -0.15,
+      "y": 3.573242702867758
+    },
+    {
+      "x": -0.05,
+      "y": 1.0961193880362337
+    },
+    {
+      "x": 0.0,
+      "y": -0.1424422693795289
+    },
+    {
+      "x": 0.05,
+      "y": -1.3810039267952914
+    },
+    {
+      "x": 0.15,
+      "y": -3.8581272416268155
+    }
+  ],
+  "training": {
+    "n_photos": 349,
+    "note": "in-sample MAE 0.0916 mg/L"
+  },
+  "uncertainty": {
+    "cross_brand_mae": 0.24,
+    "same_family_mae": 0.08
+  },
+  "version": 1
+}
