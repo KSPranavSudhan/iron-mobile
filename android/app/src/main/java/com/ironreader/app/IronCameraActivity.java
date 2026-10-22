@@ -11,6 +11,7 @@ import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
+import android.hardware.display.DisplayManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -86,6 +87,27 @@ public class IronCameraActivity extends Activity {
     private int frameCount = 0, lockFrames = 0;
     private volatile int lastDeviceOrientation = OrientationEventListener.ORIENTATION_UNKNOWN;
     private OrientationEventListener orientationListener;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override
+        public void onDisplayAdded(int id) {
+            // not used
+        }
+
+        @Override
+        public void onDisplayRemoved(int id) {
+            // not used
+        }
+
+        @Override
+        public void onDisplayChanged(int id) {
+            ui.post(new Runnable() {
+                @Override
+                public void run() {
+                    configureTransform();
+                }
+            });
+        }
+    };
     private int jpegOrientation = 0;
     private TotalCaptureResult stillResult;
     private byte[] jpegBytes;
@@ -122,6 +144,12 @@ public class IronCameraActivity extends Activity {
         super.onResume();
         paused = false;
         resumedOnce = true;
+        try {
+            DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+            if (dm != null) dm.registerDisplayListener(displayListener, ui);
+        } catch (Throwable ignored) {
+            // preview may stay rotated after a flip; photo orientation is unaffected
+        }
         startBg();
         if (!finished && textureView != null && textureView.isAvailable()) openCamera();
     }
@@ -129,6 +157,12 @@ public class IronCameraActivity extends Activity {
     @Override
     protected void onPause() {
         paused = true;
+        try {
+            DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+            if (dm != null) dm.unregisterDisplayListener(displayListener);
+        } catch (Throwable ignored) {
+            // nothing registered
+        }
         cancelTimeout();
         closeCamera();
         state = ST_IDLE;
@@ -767,16 +801,13 @@ public class IronCameraActivity extends Activity {
     private int computeJpegOrientation() {
         Integer so = chars.get(CameraCharacteristics.SENSOR_ORIENTATION);
         int sensor = so == null ? 90 : so;
-        int dev = lastDeviceOrientation;
-        if (dev == OrientationEventListener.ORIENTATION_UNKNOWN) {
-            int rot = getWindowManager().getDefaultDisplay().getRotation();
-            int deg = rot == Surface.ROTATION_90 ? 90 : rot == Surface.ROTATION_180 ? 180 : rot == Surface.ROTATION_270 ? 270 : 0;
-            dev = (360 - deg) % 360;
-            IronCameraSupport.log("phone orientation unknown (lying flat?); using screen orientation " + dev);
-        }
-        dev = ((dev + 45) / 90 * 90) % 360;
-        int o = (sensor + dev) % 360;
-        IronCameraSupport.log("jpeg orientation " + o + " (sensor " + sensor + ", phone " + dev + ")");
+        // The photo matches the PREVIEW (screen orientation), not gravity: in a lightbox the phone points down or
+        // sits at an angle, where gravity is meaningless (v3 got "portrait" photos that way). The screen is always
+        // landscape here, so the photo is always landscape and upright exactly as the user framed it.
+        int rot = getWindowManager().getDefaultDisplay().getRotation();
+        int deg = rot == Surface.ROTATION_90 ? 90 : rot == Surface.ROTATION_180 ? 180 : rot == Surface.ROTATION_270 ? 270 : 0;
+        int o = (sensor - deg + 360) % 360;
+        IronCameraSupport.log("jpeg orientation " + o + " (sensor " + sensor + ", screen " + deg + ", gravity " + lastDeviceOrientation + ")");
         return o;
     }
 

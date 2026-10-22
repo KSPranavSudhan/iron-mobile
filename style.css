@@ -554,3 +554,9 @@ body { padding-top: max(32px, env(safe-area-inset-top)); padding-bottom: max(40p
 .diag-actions { display: flex; gap: 10px; margin-top: 10px; } .diag-actions .btn-secondary { flex: 1 1 0; margin: 0; }
 .diag-foot { margin: 8px 0 0; font-size: 12px; color: var(--ink-faint); text-align: center; }
 #s-camcheck { margin-top: 10px; }
+
+/* ---- "not validated" warning before analysis ---- */
+.warn-list { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; line-height: 1.45; }
+.warn-list li::marker { color: var(--err); }
+.warn-actions { margin-top: 14px; } .warn-actions .btn-primary, .warn-actions .btn-secondary { flex: 1 1 140px; margin: 0; }
+.small-toggle { font-size: 13px; font-weight: 500; color: var(--ink-soft); margin: 4px 0 10px; }

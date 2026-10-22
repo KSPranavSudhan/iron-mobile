@@ -28,7 +28,7 @@
         <activity
             android:name=".IronCameraActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
+            android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
 

@@ -14,6 +14,7 @@
   // Running inside the Capacitor Android app (APK)? Then everything is bundled in the APK: no service worker needed.
   const NATIVE = !!(self.Capacitor && self.Capacitor.isNativePlatform && self.Capacitor.isNativePlatform());
   const LAST_CHECK_KEY = 'iron.lastUpdateCheck';
+  const SKIP_WARN_KEY = 'iron.skipBadPhotoWarning';   // "Don't show this warning again"
 
   // ---------------------------------------------------------------- diagnostics: every failure becomes a screenshot-able report
   const DIAG_HINTS = [
@@ -246,7 +247,7 @@
       const th = $('dropzone-thumb'); th.onload = () => URL.revokeObjectURL(url); th.src = url; th.hidden = false;
       $('preview-empty').hidden = true; $('clear-btn').hidden = false; $('analyze-btn').disabled = false;
       const w = bitmap.width, h = bitmap.height, msgs = [];
-      if (h > w) msgs.push('This photo is portrait. Retake it in landscape — the app needs the tube and card side by side.');
+      if (h > w) msgs.push('This photo is portrait. Landscape is what was validated; the app will rotate it and try, but retaking in landscape is better.');
       else if (w < 3000) msgs.push(`Photo is only ${w}×${h}. The app was validated on ~4096×3072 photos; shared/compressed copies (WhatsApp etc.) can give wrong readings. Use the original.`);
       if (!exif.present) msgs.push('No camera metadata (EXIF) found, so the phone model can’t be identified; the cross-brand error estimate will be used.');
       if (nativeInfo) {
@@ -296,9 +297,9 @@
     }
     const hint = $('sc-hint'), ov = $('sc-override');
     if (c.status === 'fail') {
-      hint.textContent = 'Retake the photo with the settings marked in red. Readings from other settings were never validated and can be badly off.';
-      ov.hidden = sel.override; $('analyze-btn').disabled = !sel.override;
-      setAnalyzeLabel(sel.override ? 'Analyze (not validated)' : 'Retake with the settings above');
+      hint.textContent = 'Best: retake with the settings marked in red. You can still analyze — readings from other settings were never validated, so the result will be marked “Not validated”.';
+      ov.hidden = true; $('analyze-btn').disabled = false;
+      setAnalyzeLabel('Analyze anyway (not validated)');
     } else if (c.status === 'unknown') {
       hint.textContent = 'This photo has no (or incomplete) camera data — typical for shared or edited copies. Use the original photo from the camera if you can.';
       ov.hidden = true; $('analyze-btn').disabled = false; setAnalyzeLabel('Analyze Sample');
@@ -410,14 +411,20 @@
   // ---------------------------------------------------------------- analysis
   const STAGE_TEXT = { decode: 'Preparing photo…', tube: 'Locating the tube…', features: 'Measuring colour…', card: 'Reading the reference card…', model: 'Computing concentration…' };
 
-  function bitmapToImageData(bitmap) {
-    const r = bitmap.width / 4096;
-    let w = bitmap.width, h = bitmap.height;
-    if (r > 1.1) { w = 4096; h = Math.round(bitmap.height * 4096 / bitmap.width); }   // big sensors: keep canvas/memory sane
+  /** rot: 0, -90 (counter-clockwise), 90 (clockwise) or 180; portrait -> landscape, upside-down -> upright. */
+  function bitmapToImageData(bitmap, rot) {
+    rot = rot || 0;
+    const q = rot === 90 || rot === -90;
+    const sw = q ? bitmap.height : bitmap.width, sh = q ? bitmap.width : bitmap.height;   // size after rotation
+    const k = sw / 4096 > 1.1 ? 4096 / sw : 1;                                                // big sensors: keep canvas/memory sane
+    const w = Math.round(sw * k), h = Math.round(sh * k), bw = bitmap.width * k, bh = bitmap.height * k;
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const g = c.getContext('2d', { willReadFrequently: true });
     g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-    g.drawImage(bitmap, 0, 0, w, h);
+    if (rot === -90) { g.translate(0, h); g.rotate(-Math.PI / 2); }
+    else if (rot === 90) { g.translate(w, 0); g.rotate(Math.PI / 2); }
+    else if (rot === 180) { g.translate(w, h); g.rotate(Math.PI); }
+    g.drawImage(bitmap, 0, 0, bw, bh);
     const d = g.getImageData(0, 0, w, h);
     c.width = c.height = 0;
     return d;
@@ -437,20 +444,57 @@
     });
   }
 
+  /** Why this photo is outside what was validated (settings in red, portrait). Empty = fine. */
+  function photoProblems() {
+    const out = [];
+    if (sel && sel.check && sel.check.status === 'fail') {
+      for (const i of sel.check.items) if (i.status === 'fail') out.push(`${i.label}: ${i.value} (needs ${i.expected})`);
+    }
+    if (sel && sel.bitmap && sel.bitmap.height > sel.bitmap.width) out.push('Photo is portrait (needs landscape); it will be rotated to try');
+    return out;
+  }
+
+  function openWarnSheet(problems) {
+    const ul = $('warn-list'); ul.textContent = '';
+    for (const t of problems) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+    $('warn-dontshow').checked = false;
+    $('warn-sheet').showModal();
+  }
+
   async function analyze() {
     if (!sel) return;
-    if (sel.check && sel.check.status === 'fail' && !sel.override) return;   // must retake (or explicitly override)
+    const problems = photoProblems();
+    if (problems.length && !sel.override) {
+      if (lsGet(SKIP_WARN_KEY) !== '1') { openWarnSheet(problems); return; }
+      sel.override = true;   // warnings switched off: analyse, still marked "Not validated"
+    }
     const btn = $('analyze-btn'); btn.disabled = true;
     const sl = $('status-line'); sl.hidden = false; sl.textContent = 'Starting engine…';
     $('error-card').hidden = true; $('readout-card').hidden = true;
     try {
       await Promise.race([whenWorkerReady(), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('The image engine did not start within 60 s.'), { code: 'engine_timeout' })), 60000))]);
       sl.textContent = STAGE_TEXT.decode;
-      const imageData = bitmapToImageData(sel.bitmap);
       const { bundle, source } = activeInfo();
       const t0 = performance.now();
       const device = { make: sel.exif.make, model: sel.exif.model, present: sel.exif.present, source: sel.source === 'app_camera' ? 'app_camera' : 'file' };
-      const res = await runWorker(imageData, device, bundle, (s) => { sl.textContent = STAGE_TEXT[s] || s; });
+      // Portrait photo: turn it to landscape; which way is unknown, so try one and fall back to the other.
+      // Landscape photo that turns out upside down (card reads backwards): try it turned 180 degrees.
+      // The pipeline's orientation guard (card slope) rejects the wrong way round, so a wrong turn can't give a reading.
+      const portrait = sel.bitmap.height > sel.bitmap.width;
+      const tries = !portrait ? [0, 180] : (sel.native && sel.native.jpeg_orientation === 270 ? [90, -90] : [-90, 90]);
+      let res = null, lastErr = null;
+      for (const rot of tries) {
+        try {
+          res = await runWorker(bitmapToImageData(sel.bitmap, rot), device, bundle, (s) => { sl.textContent = STAGE_TEXT[s] || s; });
+          res.rotated_by = rot; sel.rotation = rot; break;
+        } catch (e) {
+          // report the first error, unless it was only "orientation" and a later turn says something more specific
+          if (!lastErr || (lastErr.code === 'orientation' && e.code !== 'orientation')) lastErr = e;
+          if (!['no_tube', 'no_card', 'orientation'].includes(e.code)) { lastErr = e; break; }
+          if (rot === 0 && e.code !== 'orientation') break;   // upright photo without tube/card: turning it won't help
+        }
+      }
+      if (!res) throw lastErr;
       res.elapsed_ms = Math.round(performance.now() - t0);
       showResult(res, bundle, source);
     } catch (e) {
@@ -494,10 +538,14 @@
     const scLabel = { ok: 'Verified', close: 'Close to validated', unknown: 'Not verifiable', fail: 'Outside validated', unchecked: 'Not checked' };
     ds.textContent = (sc ? scLabel[sc.status] : 'Not checked') + (sel && sel.source === 'app_camera' ? ' (app camera)' : '');
     ds.classList.toggle('badge-ok', !!sc && sc.status === 'ok'); ds.classList.toggle('warn', !sc || sc.status !== 'ok');
-    if (sc && sc.status === 'fail') {
-      const bad = sc.items.filter((i) => i.status === 'fail').map((i) => `${i.label.toLowerCase()} ${i.value}`).join(', ');
-      ib.classList.add('warn'); $('banner-title').textContent = 'Not validated — camera settings differ';
-      $('banner-detail').textContent = `This photo was taken with ${bad}, outside the settings the model was validated on. Treat the reading as indicative only. ${data.warning || ''}`.trim();
+    const why = [];
+    if (sc && sc.status === 'fail') why.push('taken with ' + sc.items.filter((i) => i.status === 'fail').map((i) => `${i.label.toLowerCase()} ${i.value}`).join(', '));
+    if (data.rotated_by === 180) why.push('upside down (turned 180° to analyse)');
+    else if (data.rotated_by) why.push(`portrait (rotated ${data.rotated_by > 0 ? 'clockwise' : 'counter-clockwise'} to analyse)`);
+    if (why.length) {
+      ib.classList.add('warn');
+      $('banner-title').textContent = sc && sc.status === 'fail' ? 'Not validated — camera settings differ' : data.rotated_by === 180 ? 'Not validated — photo was upside down' : 'Not validated — portrait photo';
+      $('banner-detail').textContent = `This photo was ${why.join(' and ')}, outside what the model was validated on. Treat the reading as indicative only. ${data.warning || ''}`.trim();
     }
     $('detect-meta').textContent = `${data.roi_method} · ${(data.elapsed_ms / 1000).toFixed(1)} s on-device`;
     drawOverlay(data);
@@ -509,7 +557,16 @@
       const pw = Math.min(900, W), ph = Math.round(pw * H / W), k = pw / W;
       c.width = pw; c.height = ph;
       const g = c.getContext('2d');
-      g.drawImage(sel.bitmap, 0, 0, pw, ph);
+      const rot = data.rotated_by || 0;
+      if (rot) {   // the analysed image was the rotated photo: draw it the same way
+        g.save();
+        if (rot === 180) { g.translate(pw, ph); g.rotate(Math.PI); g.drawImage(sel.bitmap, 0, 0, pw, ph); }
+        else {
+          if (rot === -90) { g.translate(0, ph); g.rotate(-Math.PI / 2); } else { g.translate(pw, 0); g.rotate(Math.PI / 2); }
+          g.drawImage(sel.bitmap, 0, 0, ph, pw);
+        }
+        g.restore();
+      } else g.drawImage(sel.bitmap, 0, 0, pw, ph);
       g.lineWidth = 3;
       g.strokeStyle = '#FF6A2B';
       const [x1, y1, x2, y2] = data.roi_box; g.strokeRect(x1 * k, y1 * k, (x2 - x1) * k, (y2 - y1) * k);
@@ -556,6 +613,13 @@
     $('cap-open').addEventListener('click', onCapOpen);
     $('cap-pick').addEventListener('click', () => { $('capture-sheet').close(); $('file-input-gallery').click(); });
     $('diag-close').addEventListener('click', () => { $('diag-card').hidden = true; });
+    $('warn-go').addEventListener('click', () => {
+      if ($('warn-dontshow').checked) { lsSet(SKIP_WARN_KEY, '1'); $('s-warn-toggle').checked = false; }
+      $('warn-sheet').close(); if (sel) { sel.override = true; analyze(); }
+    });
+    $('warn-retake').addEventListener('click', () => { $('warn-sheet').close(); clearSelectedFile(); onTakePhoto(); });
+    $('s-warn-toggle').checked = lsGet(SKIP_WARN_KEY) !== '1';
+    $('s-warn-toggle').addEventListener('change', (e) => { lsSet(SKIP_WARN_KEY, e.target.checked ? '0' : '1'); });
     $('diag-copy').addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(lastDiagText); toast('Details copied'); }
       catch (e) { const r = document.createRange(); r.selectNodeContents($('diag-pre')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selected — long-press to copy'); }

@@ -518,6 +518,12 @@
           const fit = huberFit(xs, ys);
           slope = fit.slope;
           resid = xs.map((x, i) => fit.slope * x + fit.intercept - ys[i]);
+          // Orientation guard: an upside-down / wrongly rotated photo still "finds" a tube and a card, but reads the card
+          // patches in the wrong order -> negative slope -> silently wrong reading (e.g. -0.6 instead of 1.7).
+          // On all 489 real photos the slope is >= 0.45; on 180-degree rotated ones it is always negative.
+          if (!(slope > 0.2)) {
+            throw new PipelineError('orientation', 'The reference card reads backwards, so this photo is probably upside down or rotated. Hold the phone the same way round as for your other photos (tube and card in the usual positions) and retake.');
+          }
           // Validated Nord-family models skip the card correction: on them the per-photo card slope is mostly
           // shot-to-shot noise (sd ~0.08-0.12 around 1.0) and applying it raised error from ~0.10 to ~0.15-0.19 mg/L
           // (leave-one-session-out on 349 Nord photos; held-out AC2001 unit 0.185 -> 0.104). Cross-brand phones keep it.

@@ -178,6 +178,20 @@
     </div>
   </dialog>
 
+  <!-- Warning before analysing a photo that wasn't taken as validated (can be switched off) -->
+  <dialog id="warn-sheet" class="sheet">
+    <form method="dialog" class="sheet-head"><strong>This photo isn’t taken the validated way</strong><button class="btn-x" aria-label="Close">✕</button></form>
+    <div class="sheet-body">
+      <ul class="warn-list" id="warn-list"></ul>
+      <p class="sheet-note">The model was never validated on photos like this, so the reading can be badly off. It will be marked “Not validated”.</p>
+      <label class="cap-confirm"><input type="checkbox" id="warn-dontshow"> Don’t show this warning again</label>
+      <div class="sheet-row warn-actions">
+        <button type="button" class="btn-secondary btn-tight" id="warn-retake">Retake photo</button>
+        <button type="button" class="btn-primary btn-tight" id="warn-go">Analyze anyway</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Android app: how to take the photo -->
   <dialog id="mode-sheet" class="sheet">
     <form method="dialog" class="sheet-head"><strong>How do you want to take the photo?</strong><button class="btn-x" aria-label="Close">✕</button></form>
@@ -220,6 +234,7 @@
       </div>
       <button type="button" class="btn-secondary btn-tight" id="s-install-app" hidden>Install app on this phone</button>
       <p class="sheet-note" id="s-install-hint" hidden>iPhone: tap Share, then “Add to Home Screen”.</p>
+      <label class="cap-confirm small-toggle"><input type="checkbox" id="s-warn-toggle" checked> Warn me before analysing photos taken with the wrong settings</label>
       <button type="button" class="btn-secondary btn-tight" id="s-camcheck" hidden>Camera check (troubleshooting)</button>
       <pre class="diag-pre" id="s-camcheck-out" hidden></pre>
       <div class="sheet-sep"></div>
