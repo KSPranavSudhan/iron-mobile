@@ -111,7 +111,9 @@
     range('exposure_time_s', 'Shutter speed', req.exposure_time_s, fmtShutter);
     if (req.white_balance === 'manual') {
       const wb = s.white_balance;
-      add('white_balance', 'White balance', wb === undefined ? 'not recorded' : wb === 1 ? 'Manual' : 'Auto', 'Manual / fixed', wb === undefined ? 'unknown' : wb === 1 ? 'ok' : 'fail');
+      // 2 = auto white balance locked for the shot (app camera on phones without fixed presets): close, not exact
+      add('white_balance', 'White balance', wb === undefined ? 'not recorded' : wb === 1 ? 'Manual' : wb === 2 ? 'Auto, locked' : 'Auto', 'Manual / fixed',
+        wb === undefined ? 'unknown' : wb === 1 ? 'ok' : wb === 2 ? 'close' : 'fail');
     }
     if (req.flash === 'off') {
       const f = s.flash;

@@ -1,5 +1,5 @@
 /* sw.js -- offline app shell. Bump CACHE whenever any shipped file changes. */
-const CACHE = 'iron-app-v3';
+const CACHE = 'iron-app-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'worker.js', 'pipeline.js', 'bundle.js', 'exif.js', 'config.js',
   'manifest.webmanifest', 'lib/opencv.js', 'model/model.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 

@@ -15,6 +15,89 @@
   const NATIVE = !!(self.Capacitor && self.Capacitor.isNativePlatform && self.Capacitor.isNativePlatform());
   const LAST_CHECK_KEY = 'iron.lastUpdateCheck';
 
+  // ---------------------------------------------------------------- diagnostics: every failure becomes a screenshot-able report
+  const DIAG_HINTS = [
+    [/^E-CAM-PERM/, 'Allow camera access: Android Settings → Apps → Iron Reader → Permissions → Camera. Then try again.'],
+    [/^E-CAM-(ACCESS|DEVICE-[12]|DISCONNECTED|OPEN-TIMEOUT)/, 'Another app may be using the camera. Close other camera apps (or restart the phone) and try again. Meanwhile you can use Manual.'],
+    [/^E-CAM-/, 'This phone’s camera rejected the automatic setup. Use Manual for now and send this screenshot.'],
+    [/^E-PLUGIN/, 'This build doesn’t include the in-app camera. Install the latest APK (uninstall the old app first).'],
+    [/^E-APP-/, 'Open your camera app yourself, take the photo in Pro mode, then use “Choose from Gallery”.'],
+    [/^E-LOAD/, 'The photo was taken but could not be handed to the analyser. Try again, or use Manual.'],
+    [/^E-CRASH/, 'The app closed unexpectedly last time. The details below show where it happened.'],
+    [/^E-ENGINE/, 'The on-device image engine did not start. Close and reopen the app.'],
+  ];
+  let lastDiagText = '';
+  const nowStamp = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+  function appLine() {
+    let mv = '?'; try { mv = store ? store.active().bundle.version : '?'; } catch (e) { /* ignore */ }
+    return `App v${CFG.APP_VERSION} · model v${mv} · ${NATIVE ? 'Android app' : 'browser'} · ${nowStamp()}`;
+  }
+  function describeNative(err) {
+    const L = [];
+    if (!err) return L;
+    if (err.step) L.push(`Step: ${err.step}`);
+    const d = err.device;
+    if (d) L.push(`Phone: ${d.manufacturer || ''} ${d.model || ''} (${d.device || ''}) · Android ${d.android || '?'} (SDK ${d.sdk || '?'}) · native v${d.native_version || '?'}`);
+    const p = err.plan;
+    if (p) {
+      L.push(`Camera: id ${p.camera_id} · ${p.hw_level} · ${p.mode} · ISO ${p.iso == null ? 'auto' : p.iso} · ${p.exposure_ms == null ? 'auto' : p.exposure_ms + ' ms'} · WB ${p.white_balance} · ${p.af}`);
+      L.push(`Sizes: photo ${p.jpeg} · preview ${p.preview} · sensor ${p.sensor_orientation}° · focal ${p.focal35 == null ? '?' : p.focal35 + ' mm'} · ISO range ${p.iso_range || '?'} · exp ${p.exposure_range_ms || '?'} ms`);
+      if (p.notes && p.notes.length) L.push('Notes: ' + p.notes.join(' | '));
+    }
+    if (err.exception) L.push(`Exception: ${err.exception}`);
+    if (err.stack) L.push(String(err.stack).split('\n').slice(1, 5).map((x) => '  ' + x.trim()).join('\n'));
+    if (err.warnings && err.warnings.length) L.push('Warnings: ' + err.warnings.join(' | '));
+    return L;
+  }
+  /** opts: {code, title, what, hint, native (error object from the camera), extra (lines), log (lines)} */
+  function showDiagnostic(opts) {
+    try {
+      const code = opts.code || 'E-UNKNOWN';
+      const hint = opts.hint || (DIAG_HINTS.find(([re]) => re.test(code)) || [null, 'Send this screenshot so the problem can be fixed.'])[1];
+      const n = opts.native || {};
+      const lines = [`${code} — ${opts.title || 'Error'}`];
+      if (opts.what) lines.push(opts.what);
+      lines.push(...describeNative(n));
+      if (opts.extra) lines.push(...[].concat(opts.extra));
+      lines.push(appLine());
+      const log = opts.log || n.log || [];
+      const full = lines.concat(log.length ? ['--- log ---', ...log] : []).join('\n');
+      const shown = lines.concat(log.length ? ['--- log (last 10) ---', ...log.slice(-10)] : []).join('\n');
+      lastDiagText = full;
+      $('diag-code').textContent = code; $('diag-title').textContent = opts.title || 'Something went wrong';
+      $('diag-what').textContent = opts.what || ''; $('diag-hint').textContent = hint;
+      $('diag-pre').textContent = shown;
+      const card = $('diag-card'); card.hidden = false;
+      try { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+      self.__lastDiagnostic = { code, text: full };
+    } catch (e) {
+      try { alert(`${opts.code}: ${opts.title}\n${opts.what || ''}`); } catch (e2) { /* nothing left */ }
+    }
+  }
+  self.addEventListener('error', (e) => {
+    if (!e || !e.message || /^Script error\.?$/.test(e.message)) return;
+    showDiagnostic({ code: 'E-JS', title: 'Unexpected app error', what: e.message,
+      extra: [`At: ${(e.filename || '').split('/').pop()}:${e.lineno}:${e.colno}`, e.error && e.error.stack ? String(e.error.stack).split('\n').slice(0, 5).join('\n') : ''].filter(Boolean) });
+  });
+  self.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    showDiagnostic({ code: 'E-JS-PROMISE', title: 'Unexpected app error', what: (r && r.message) || String(r),
+      extra: r && r.stack ? [String(r.stack).split('\n').slice(0, 5).join('\n')] : [] });
+  });
+
+  // ---------------------------------------------------------------- the app's own camera (Android only, native plugin "IronCamera")
+  const Cam = {
+    available: () => NATIVE && !!(self.Capacitor && typeof self.Capacitor.nativePromise === 'function'),
+    async call(method, opts) {
+      try { return await self.Capacitor.nativePromise('IronCamera', method, opts || {}); }
+      catch (e) {
+        const msg = (e && e.message) || String(e);
+        const missing = /not implemented|UNIMPLEMENTED|not available|does not have/i.test(msg + ' ' + (e && e.code));
+        return { status: 'error', error: { code: missing ? 'E-PLUGIN' : 'E-PLUGIN-CALL', message: `IronCamera.${method}: ${msg}` } };
+      }
+    },
+  };
+
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } };
 
@@ -31,7 +114,10 @@
     worker.onmessage = (e) => {
       if (e.data.type === 'ready') { workerReady = true; workerWaiters.splice(0).forEach((f) => f()); updateFooter(); }
     };
-    worker.onerror = (e) => { console.error('worker error', e.message); };
+    worker.onerror = (e) => {
+      console.error('worker error', e.message);
+      showDiagnostic({ code: 'E-ENGINE', title: 'The image engine failed', what: e.message || 'worker error', extra: [`At: ${(e.filename || '').split('/').pop()}:${e.lineno || '?'}`] });
+    };
   }
   const whenWorkerReady = () => (workerReady ? Promise.resolve() : new Promise((r) => workerWaiters.push(r)));
 
@@ -130,14 +216,30 @@
     }
   }
 
-  async function setSelectedFile(file, source) {
+  /** Settings the in-app camera actually used (from the camera itself) -> same shape as readExif().settings */
+  function mergeNativeSettings(exif, n) {
+    const num = (x) => typeof x === 'number' && isFinite(x);
+    const a = n.actual || {}, p = n.plan || {}, d = n.device || {};
+    const s = Object.assign({}, exif.settings || {});
+    if (num(a.iso)) s.iso = a.iso;
+    if (num(a.exposure_time_s)) s.exposure_time_s = a.exposure_time_s;
+    if (num(a.awb_mode)) s.white_balance = a.awb_mode === 1 ? (p.awb_locked ? 2 : 0) : 1;   // 1 = AUTO; 2 = auto but locked for the shot
+    s.flash = a.flash_state === 3 ? 1 : 0;                       // FLASH_STATE_FIRED
+    s.exposure_bias_ev = 0;                                      // the app camera never applies exposure compensation
+    s.digital_zoom = num(a.zoom_ratio) ? a.zoom_ratio : 1;
+    if (num(p.focal35)) s.focal_35mm = Math.round(p.focal35);
+    return { present: true, make: exif.make || d.manufacturer || null, model: exif.model || d.model || null, orientation: exif.orientation, settings: s, from_app_camera: true };
+  }
+
+  async function setSelectedFile(file, source, nativeInfo) {
     resetResultViews();
     if (sel && sel.bitmap && sel.bitmap.close) sel.bitmap.close();
     sel = null;
     const note = $('photo-note'); note.hidden = true;
     try {
       const head = await file.slice(0, 262144).arrayBuffer();
-      const exif = Exif.readExif(new Uint8Array(head));
+      let exif = Exif.readExif(new Uint8Array(head));
+      if (source === 'app_camera' && nativeInfo) exif = mergeNativeSettings(exif, nativeInfo);
       const bitmap = await loadBitmap(file);
       sel = { file, bitmap, exif };
       const url = URL.createObjectURL(file);
@@ -147,12 +249,17 @@
       if (h > w) msgs.push('This photo is portrait. Retake it in landscape — the app needs the tube and card side by side.');
       else if (w < 3000) msgs.push(`Photo is only ${w}×${h}. The app was validated on ~4096×3072 photos; shared/compressed copies (WhatsApp etc.) can give wrong readings. Use the original.`);
       if (!exif.present) msgs.push('No camera metadata (EXIF) found, so the phone model can’t be identified; the cross-brand error estimate will be used.');
+      if (nativeInfo) {
+        const p = nativeInfo.plan || {};
+        if (p.mode === 'locked_auto') msgs.push('This phone doesn’t let apps set ISO and shutter exactly, so exposure was measured and locked instead.');
+        for (const w of [].concat(p.notes || [], nativeInfo.warnings || [])) if (!/doesn't let apps set/.test(w)) msgs.push(w + '.');
+      }
       if (msgs.length) { note.textContent = msgs.join(' '); note.hidden = false; }
-      sel.source = source; sel.override = false;
+      sel.source = source; sel.override = false; sel.native = nativeInfo || null;
       sel.check = Exif.checkCaptureSettings(exif, activeInfo().bundle.capture, [w, h]);
       renderSettingsCheck();
     } catch (e) {
-      showError('This image could not be opened. Try a JPEG photo.');
+      showError('This image could not be opened. Try a JPEG photo.', { code: 'decode', message: e && e.message, file });
     }
   }
 
@@ -201,13 +308,103 @@
     }
   }
 
-  function openCaptureSheet() {
+  let capMode = 'web';   // 'web': browser camera input; 'native-manual': the phone's own camera app (Android app)
+  function onTakePhoto() {
+    if (Cam.available()) $('mode-sheet').showModal();
+    else openCaptureSheet('web');
+  }
+
+  function openCaptureSheet(mode) {
+    capMode = mode;
     const req = activeInfo().bundle.capture;
-    if (!req || !Array.isArray(req.checklist) || !req.checklist.length) { $('file-input-camera').click(); return; }
+    const list = (req && Array.isArray(req.checklist)) ? req.checklist : [];
+    if (mode === 'web' && !list.length) { $('file-input-camera').click(); return; }
     const ol = $('cap-list'); ol.textContent = '';
-    for (const t of req.checklist) { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); }
-    $('cap-confirm').checked = false; $('cap-open').disabled = true;
+    for (const t of list) { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); }
+    $('cap-confirm').checked = false; $('cap-open').disabled = true; $('cap-open').hidden = false;
+    $('cap-open').textContent = mode === 'native-manual' ? 'Open my camera app' : 'Open camera';
+    $('cap-step2').hidden = true;
     $('capture-sheet').showModal();
+  }
+
+  async function onCapOpen() {
+    if (capMode !== 'native-manual') { $('capture-sheet').close(); $('file-input-camera').click(); return; }
+    const r = await Cam.call('openCameraApp');
+    if (!r || r.status !== 'ok') {
+      $('capture-sheet').close();
+      showDiagnostic({ code: (r && r.error && r.error.code) || 'E-APP-OPEN', title: 'Could not open the camera app', what: r && r.error && r.error.message, native: r && r.error });
+      return;
+    }
+    $('cap-step2').hidden = false; $('cap-open').hidden = true;   // they come back here after shooting
+  }
+
+  function nominalCaptureOptions() {
+    const bundle = activeInfo().bundle, req = bundle.capture || {}, o = { iso: 80, exposureNs: 10000000, whiteBalance: 'daylight', jpegWidth: 4096 };
+    if (req.iso && Array.isArray(req.iso.target)) o.iso = Math.round(req.iso.target[0]);
+    if (req.exposure_time_s && Array.isArray(req.exposure_time_s.target)) o.exposureNs = Math.round((req.exposure_time_s.target[0] + req.exposure_time_s.target[1]) / 2 * 1e9);
+    if (bundle.app_camera && typeof bundle.app_camera.white_balance === 'string') o.whiteBalance = bundle.app_camera.white_balance;
+    return o;
+  }
+
+  function b64ToBlob(b64) {
+    const bin = atob(b64), u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return new Blob([u], { type: 'image/jpeg' });
+  }
+
+  async function loadCapturedFile(r) {
+    let blob = null, why = '';
+    try {
+      const resp = await fetch(self.Capacitor.convertFileSrc(r.path));
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      blob = await resp.blob();
+      if (!blob.size) throw new Error('empty file');
+    } catch (e) { why = (e && e.message) || String(e); blob = null; }
+    if (!blob) {   // fallback: ask the native side for the bytes
+      const b = await Cam.call('readCapture', { path: r.path });
+      if (!b || b.status !== 'ok') throw new Error(`file URL failed (${why}); fallback failed (${b && b.error ? b.error.code + ' ' + b.error.message : '?'})`);
+      blob = b64ToBlob(b.base64);
+    }
+    return new File([blob], String(r.path).split('/').pop() || 'capture.jpg', { type: 'image/jpeg' });
+  }
+
+  async function captureAutomatic() {
+    $('diag-card').hidden = true;
+    const sl = $('status-line'); sl.hidden = false; sl.textContent = 'Opening the camera…';
+    let r;
+    try { r = await Cam.call('capture', nominalCaptureOptions()); } finally { sl.hidden = true; }
+    self.__lastCapture = r;
+    if (!r || r.status === 'cancelled') return;
+    if (r.status !== 'ok') {
+      const e = r.error || {};
+      showDiagnostic({ code: e.code || 'E-CAM', title: 'The automatic camera failed', what: e.message, native: e });
+      return;
+    }
+    let file;
+    try { file = await loadCapturedFile(r); }
+    catch (e) { showDiagnostic({ code: 'E-LOAD', title: 'The photo could not be loaded', what: e.message, native: r, extra: [`File: ${r.path} (${r.bytes} bytes, ${r.width}×${r.height})`] }); return; }
+    await setSelectedFile(file, 'app_camera', r);
+  }
+
+  async function cameraCheck() {
+    const out = $('s-camcheck-out'); out.hidden = false; out.textContent = 'Reading camera capabilities…';
+    const r = await Cam.call('getCapabilities');
+    if (!r || r.status !== 'ok') { out.textContent = `${(r && r.error && r.error.code) || 'E-CAPS'}: ${(r && r.error && r.error.message) || 'failed'}\n${appLine()}`; return; }
+    const d = r.device || {}, p = r.plan, L = [];
+    L.push(`Phone: ${d.manufacturer} ${d.model} (${d.device}) · Android ${d.android} (SDK ${d.sdk}) · native v${d.native_version}`);
+    L.push(`Automatic camera uses: camera ${r.chosen == null ? 'NONE FOUND' : r.chosen}`);
+    if (p) {
+      L.push(p.mode === 'manual' ? `  ✓ exact settings: ISO ${p.iso} · ${p.exposure_ms} ms · WB ${p.white_balance}` : `  ! no manual ISO/shutter for apps: exposure measured then locked · WB ${p.white_balance}`);
+      L.push(`  photo ${p.jpeg} · preview ${p.preview} · ${p.hw_level} · focal ${p.focal35 == null ? '?' : p.focal35 + ' mm'} · ${p.af}`);
+      for (const n of p.notes || []) L.push('  • ' + n);
+    }
+    L.push('All cameras:');
+    for (const c of r.cameras || []) {
+      L.push(c.error ? `  ${c.id}: error ${c.error}` : `  ${c.id} ${c.facing} ${c.hw_level} manual:${c.manual_sensor ? 'yes' : 'no'} ISO ${c.iso_range || '?'} exp ${c.exposure_range_ms || '?'} ms focal ${c.focal35 || '?'} photo ${c.photo_size || '?'} WB ${(c.awb_modes || []).join(',')}`);
+    }
+    if (r.error) L.push('Error: ' + r.error);
+    L.push(appLine());
+    out.textContent = L.join('\n');
   }
 
   // ---------------------------------------------------------------- analysis
@@ -247,16 +444,17 @@
     const sl = $('status-line'); sl.hidden = false; sl.textContent = 'Starting engine…';
     $('error-card').hidden = true; $('readout-card').hidden = true;
     try {
-      await whenWorkerReady();
+      await Promise.race([whenWorkerReady(), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('The image engine did not start within 60 s.'), { code: 'engine_timeout' })), 60000))]);
       sl.textContent = STAGE_TEXT.decode;
       const imageData = bitmapToImageData(sel.bitmap);
       const { bundle, source } = activeInfo();
       const t0 = performance.now();
-      const res = await runWorker(imageData, { make: sel.exif.make, model: sel.exif.model, present: sel.exif.present }, bundle, (s) => { sl.textContent = STAGE_TEXT[s] || s; });
+      const device = { make: sel.exif.make, model: sel.exif.model, present: sel.exif.present, source: sel.source === 'app_camera' ? 'app_camera' : 'file' };
+      const res = await runWorker(imageData, device, bundle, (s) => { sl.textContent = STAGE_TEXT[s] || s; });
       res.elapsed_ms = Math.round(performance.now() - t0);
       showResult(res, bundle, source);
     } catch (e) {
-      showError(e.message || 'Something went wrong reading this photo.');
+      showError(e.message || 'Something went wrong reading this photo.', { code: e.code || 'internal', message: e.message });
     } finally { sl.hidden = true; }
   }
 
@@ -285,13 +483,16 @@
       ib.classList.add('warn'); $('banner-title').textContent = 'Extrapolated result';
       $('banner-detail').textContent = data.warning || 'This reading falls outside the calibrated range and has been extrapolated.';
     }
+    if (data.debug && data.debug.source === 'app_camera' && !data.device_calibrated) {
+      ib.classList.add('warn'); $('banner-title').textContent = 'App camera — not yet validated';
+    }
     if (below && data.in_calibrated_range) {
       $('banner-detail').textContent = `Raw reading ${data.concentration_mg_per_l.toFixed(3)} mg/L — at blank level (no detectable iron). ${data.warning || ''}`.trim();
     }
     // camera-settings verdict for this photo
     const sc = sel && sel.check, ds = $('detail-settings');
     const scLabel = { ok: 'Verified', close: 'Close to validated', unknown: 'Not verifiable', fail: 'Outside validated', unchecked: 'Not checked' };
-    ds.textContent = sc ? scLabel[sc.status] : 'Not checked';
+    ds.textContent = (sc ? scLabel[sc.status] : 'Not checked') + (sel && sel.source === 'app_camera' ? ' (app camera)' : '');
     ds.classList.toggle('badge-ok', !!sc && sc.status === 'ok'); ds.classList.toggle('warn', !sc || sc.status !== 'ok');
     if (sc && sc.status === 'fail') {
       const bad = sc.items.filter((i) => i.status === 'fail').map((i) => `${i.label.toLowerCase()} ${i.value}`).join(', ');
@@ -317,8 +518,17 @@
     } catch (e) { /* overlay is a nicety */ }
   }
 
-  function showError(msg) {
+  function showError(msg, ctx) {
     $('error-card').hidden = false; $('error-detail').textContent = msg; $('analyze-btn').disabled = !sel;
+    const pre = $('error-pre');
+    if (!ctx) { pre.hidden = true; return; }
+    const L = [`Code: ${ctx.code || 'unknown'}${ctx.message && ctx.message !== msg ? ' · ' + ctx.message : ''}`];
+    if (sel && sel.bitmap) L.push(`Photo: ${sel.bitmap.width}×${sel.bitmap.height} · from ${sel.source}${sel.file ? ' · ' + Math.round(sel.file.size / 1024) + ' KB' : ''}`);
+    else if (ctx.file) L.push(`File: ${ctx.file.name || '?'} · ${ctx.file.type || '?'} · ${Math.round((ctx.file.size || 0) / 1024)} KB`);
+    if (sel && sel.exif) L.push(`Camera: ${[sel.exif.make, sel.exif.model].filter(Boolean).join(' ') || 'not identified'} · settings ${sel.check ? sel.check.status : '—'}`);
+    if (sel && sel.native && sel.native.plan) L.push(`App camera: ${sel.native.plan.mode} · id ${sel.native.plan.camera_id} · ${sel.native.plan.hw_level} · jpeg orientation ${sel.native.jpeg_orientation}`);
+    L.push(appLine());
+    pre.textContent = L.join('\n'); pre.hidden = false;
   }
   function resetResultViews() { $('readout-card').hidden = true; $('error-card').hidden = true; $('capture-card').hidden = false; }
   function resetToCapture() { clearSelectedFile(); resetResultViews(); }
@@ -331,7 +541,7 @@
       const r = await fetch('model/model.json'); builtin = await r.json();
       const errs = Bundle.validateBundle(builtin, CFG.APP_VERSION);
       if (errs.length) throw new Error(errs[0]);
-    } catch (e) { $('chip-text').textContent = 'Model error'; showError('The built-in model could not be loaded: ' + (e.message || e)); return; }
+    } catch (e) { $('chip-text').textContent = 'Model error'; showError('The built-in model could not be loaded: ' + (e.message || e), { code: 'model_load', message: e.message }); return; }
     store = new Bundle.ModelStore(builtin, localStorage, CFG.APP_VERSION);
     renderModel();
     startWorker();
@@ -339,9 +549,18 @@
     // events
     $('file-input-camera').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f, 'camera'); });
     $('file-input-gallery').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) setSelectedFile(f, 'gallery'); });
-    $('btn-camera').addEventListener('click', openCaptureSheet);
+    $('btn-camera').addEventListener('click', onTakePhoto);
+    $('mode-auto').addEventListener('click', () => { $('mode-sheet').close(); captureAutomatic(); });
+    $('mode-manual').addEventListener('click', () => { $('mode-sheet').close(); openCaptureSheet('native-manual'); });
     $('cap-confirm').addEventListener('change', (e) => { $('cap-open').disabled = !e.target.checked; });
-    $('cap-open').addEventListener('click', () => { $('capture-sheet').close(); $('file-input-camera').click(); });
+    $('cap-open').addEventListener('click', onCapOpen);
+    $('cap-pick').addEventListener('click', () => { $('capture-sheet').close(); $('file-input-gallery').click(); });
+    $('diag-close').addEventListener('click', () => { $('diag-card').hidden = true; });
+    $('diag-copy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(lastDiagText); toast('Details copied'); }
+      catch (e) { const r = document.createRange(); r.selectNodeContents($('diag-pre')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selected — long-press to copy'); }
+    });
+    if (Cam.available()) { $('s-camcheck').hidden = false; $('s-camcheck').addEventListener('click', cameraCheck); }
     $('sc-override').addEventListener('click', () => { if (sel) { sel.override = true; renderSettingsCheck(); } });
     $('clear-btn').addEventListener('click', (e) => { e.preventDefault(); clearSelectedFile(); });
     $('analyze-btn').addEventListener('click', analyze);
@@ -370,10 +589,20 @@
       } catch (e) { $('s-offline').textContent = 'No (service worker unavailable)'; }
     } else { $('s-offline').textContent = 'No (not supported)'; }
 
+    // did the app crash last time? show what happened
+    if (Cam.available()) {
+      Cam.call('getLastCrash').then((r) => {
+        if (r && r.crash) {
+          const lines = String(r.crash).split('\n'), err = lines.find((l) => l.startsWith('error: ')) || lines[0];
+          showDiagnostic({ code: 'E-CRASH', title: 'The app closed unexpectedly last time', what: err.replace(/^error: /, ''), extra: lines.filter((l) => l !== err && l.trim()).slice(0, 30) });
+        }
+      });
+    }
+
     // background update check (quiet)
     const last = Number(lsGet(LAST_CHECK_KEY) || 0);
     if (CFG.AUTO_CHECK_UPDATES && navigator.onLine !== false && Date.now() - last > CFG.AUTO_CHECK_INTERVAL_MS) checkUpdates(false);
   }
 
-  boot();
+  boot().catch((e) => showDiagnostic({ code: 'E-BOOT', title: 'The app failed to start', what: (e && e.message) || String(e), extra: e && e.stack ? [String(e.stack).split('\n').slice(0, 5).join('\n')] : [] }));
 })();

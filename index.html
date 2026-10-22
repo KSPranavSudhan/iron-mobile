@@ -31,6 +31,19 @@
   </header>
 
   <main>
+    <!-- Screenshot-friendly error report: shown for camera/app failures (code + phone + camera + log) -->
+    <section class="diag-card" id="diag-card" hidden role="alert">
+      <div class="diag-head"><span class="diag-code" id="diag-code">E-?</span><strong id="diag-title">Something went wrong</strong></div>
+      <p class="diag-what" id="diag-what"></p>
+      <p class="diag-hint" id="diag-hint"></p>
+      <pre class="diag-pre" id="diag-pre"></pre>
+      <div class="diag-actions">
+        <button type="button" class="btn-secondary btn-tight" id="diag-copy">Copy details</button>
+        <button type="button" class="btn-secondary btn-tight" id="diag-close">Dismiss</button>
+      </div>
+      <p class="diag-foot">Screenshot this box and send it to get the problem fixed.</p>
+    </section>
+
     <section class="capture-card" id="capture-card">
       <div class="card-heading">
         <svg class="heading-icon icon-blue" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -138,6 +151,7 @@
     <section class="error-card" id="error-card" hidden>
       <div class="error-title">Could not read this sample</div>
       <div class="error-detail" id="error-detail"></div>
+      <pre class="diag-pre" id="error-pre" hidden></pre>
       <button id="error-reset-btn" class="btn-secondary">Try again</button>
     </section>
 
@@ -157,6 +171,26 @@
       <ol class="cap-list" id="cap-list"></ol>
       <label class="cap-confirm"><input type="checkbox" id="cap-confirm"> My camera is set like this</label>
       <button type="button" class="btn-primary btn-tight" id="cap-open" disabled>Open camera</button>
+      <div class="cap-step2" id="cap-step2" hidden>
+        <p><b>Took the photo?</b> Come back here and pick it from your gallery (it will be the newest photo).</p>
+        <button type="button" class="btn-primary btn-tight" id="cap-pick">Choose the photo I just took</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Android app: how to take the photo -->
+  <dialog id="mode-sheet" class="sheet">
+    <form method="dialog" class="sheet-head"><strong>How do you want to take the photo?</strong><button class="btn-x" aria-label="Close">✕</button></form>
+    <div class="sheet-body">
+      <button type="button" class="mode-option" id="mode-auto">
+        <span class="mode-title">Automatic <em>recommended</em></span>
+        <span class="mode-desc">The app's own camera sets the validated settings for you: ISO 80, 1/100 s, fixed white balance, flash off, 1x. Nothing to adjust.</span>
+      </button>
+      <button type="button" class="mode-option" id="mode-manual">
+        <span class="mode-title">Manual — my camera app</span>
+        <span class="mode-desc">Opens your phone's camera app. You switch to Pro / Manual mode and set the settings yourself, take the photo, then pick it here.</span>
+      </button>
+      <p class="sheet-note">Either way, the photo's camera settings are checked before it is analysed.</p>
     </div>
   </dialog>
 
@@ -186,6 +220,8 @@
       </div>
       <button type="button" class="btn-secondary btn-tight" id="s-install-app" hidden>Install app on this phone</button>
       <p class="sheet-note" id="s-install-hint" hidden>iPhone: tap Share, then “Add to Home Screen”.</p>
+      <button type="button" class="btn-secondary btn-tight" id="s-camcheck" hidden>Camera check (troubleshooting)</button>
+      <pre class="diag-pre" id="s-camcheck-out" hidden></pre>
       <div class="sheet-sep"></div>
       <div class="kv"><span>App version</span><b id="s-app">—</b></div>
       <div class="kv"><span>Update source</span><b id="s-url" class="mono small">—</b></div>

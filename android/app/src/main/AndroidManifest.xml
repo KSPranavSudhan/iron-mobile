@@ -24,6 +24,14 @@
 
         </activity>
 
+        <!-- The app's own camera: applies the validated settings (ISO 80, 1/100 s, fixed white balance, flash off, 1x) -->
+        <activity
+            android:name=".IronCameraActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

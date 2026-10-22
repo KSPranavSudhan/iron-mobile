@@ -60,6 +60,7 @@
       const u = b.uncertainty.by_band, n = Array.isArray(u.edges) ? u.edges.length + 1 : -1;
       if (n < 2 || !finArr(u.edges, 1) || !finArr(u.same_family, n) || !finArr(u.cross_brand, n) || u.same_family.length !== n || u.cross_brand.length !== n) errs.push('uncertainty.by_band needs edges[k] and same_family/cross_brand with k+1 numbers');
     }
+    if (b.app_camera != null && !(typeof b.app_camera === 'object' && (b.app_camera.validated == null || typeof b.app_camera.validated === 'boolean') && (b.app_camera.white_balance == null || typeof b.app_camera.white_balance === 'string'))) errs.push('app_camera must be {validated: boolean, white_balance?: string}');
     if (b.range_tolerance != null && !(fin(b.range_tolerance) && b.range_tolerance >= 0 && b.range_tolerance <= 0.5)) errs.push('range_tolerance must be between 0 and 0.5');
     // optional camera-capture requirements (shown before the camera opens, checked against EXIF afterwards)
     if (b.capture != null) {

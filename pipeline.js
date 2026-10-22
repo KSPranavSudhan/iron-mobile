@@ -521,11 +521,17 @@
           // Validated Nord-family models skip the card correction: on them the per-photo card slope is mostly
           // shot-to-shot noise (sd ~0.08-0.12 around 1.0) and applying it raised error from ~0.10 to ~0.15-0.19 mg/L
           // (leave-one-session-out on 349 Nord photos; held-out AC2001 unit 0.185 -> 0.104). Cross-brand phones keep it.
+          // Photos from the app's own camera (Android, Camera2) skip the phone maker's colour processing that the
+          // reference photos had, so until bundle.app_camera.validated is set (after checking against known samples)
+          // they keep the card correction and get the cross-brand error estimate, even on a Nord.
+          const appCam = device.source === 'app_camera', appCamOk = !!(bundle.app_camera && bundle.app_camera.validated);
           const skipList = (bundle.correction && bundle.correction.skip_for_models) || [];
-          skipped = !!device.present && isReferenceFamily({ make: device.make, model: device.model }, skipList);
+          skipped = !!device.present && isReferenceFamily({ make: device.make, model: device.model }, skipList) && (!appCam || appCamOk);
           corrected = skipped ? rawFeature : slope * rawFeature;
-          calibrated = same;
-          if (!device.present) {
+          calibrated = same && (!appCam || appCamOk);
+          if (appCam && !appCamOk) {
+            warning = "Taken with the app's built-in camera. Its colour processing differs from the phone camera app the model was calibrated with and hasn't been checked against known samples yet, so the reference-card correction was applied and the cross-brand error estimate is shown.";
+          } else if (!device.present) {
             warning = 'No camera metadata was found in this photo (common when a photo has been shared or edited), so the device couldn\'t be identified. A cross-brand correction was applied via the reference card; the error estimate below defaults to the cross-brand figure.';
           } else if (!calibrated) {
             warning = `Device '${device.make || ''} ${device.model || ''}' isn't the reference device family. A cross-brand correction was applied via the reference card; the error estimate is the average over the other phone brands validated so far -- not individually validated for this specific device.`;
@@ -563,7 +569,7 @@
           roi_box: roi,
           // extras beyond the Python response (used by the UI overlay and by parity tests)
           debug: {
-            raw_feature: rawFeature, corrected_feature: corrected, patch_slope: slope, patch_residuals: resid, correction_skipped: skipped,
+            raw_feature: rawFeature, corrected_feature: corrected, patch_slope: slope, patch_residuals: resid, correction_skipped: skipped, source: device.source || 'file',
             patch_logbg: photoPatches, patch_boxes: pc.boxes, patch_threshold: pc.threshold,
             work_size: [W, H], scale, features: feats,
           },

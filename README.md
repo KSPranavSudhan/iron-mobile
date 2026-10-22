@@ -50,6 +50,27 @@ Validated settings found in the 489 photos: Nord ISO 80 · 1/100 s · manual WB 
 Samsung ISO 32 · 1/90; iqoo / random ISO 100 · 1/100; Poco ISO 100 · 1/100 manual **except 0.5/1.0/1.5 mg/L which were
 shot in Auto (auto ISO 119-130, auto WB)** — the sets where Poco's errors are largest (+0.31 at 1.0).
 
+## Taking the photo in the Android app: Automatic or Manual (app v3)
+"Take Photo" asks how to take the photo:
+
+- **Automatic (recommended)**: the app's own camera (`android/.../IronCameraActivity.java`, Camera2) sets the validated
+  settings itself: ISO 80 (closest the sensor allows), 1/100 s, fixed white-balance preset (daylight), flash off, main back
+  camera at 1x, ~4096x3072 JPEG, photo upright by gravity like the stock camera. The settings the camera *actually used* are
+  read back from the capture result and checked like EXIF. Phones that don't let apps set ISO/shutter (LEGACY/LIMITED) fall
+  back to measured exposure + AE/AWB lock and are shown as "close"/"outside" in the settings check.
+- **Manual**: opens the phone's camera app normally (with Pro mode), checklist first, then "Choose the photo I just took".
+  (The old in-browser capture opened a reduced camera without Pro mode on most brands.)
+
+**In-app photos are not yet validated.** They miss the phone maker's colour processing that the reference photos had, so they
+keep the reference-card correction, get the cross-brand error estimate and say so. To validate: shoot a known-concentration set
+with Automatic on the Nord (e.g. 3 photos each at 0, 0.5, 1.0, 1.5, 2.0, 2.5 mg/L); if the error matches, publish a model
+update with `"app_camera": {"validated": true}` in `model/bundle_extras.json` (no new APK needed).
+
+**Errors are screenshot-able.** Every failure shows a red report with a code (E-CAM-..., E-APP-..., E-LOAD, E-PLUGIN, E-JS,
+E-CRASH ...), the phone/Android version, the camera plan (ISO/shutter/WB/size/hardware level), the exception and the last
+camera log lines. A native crash is saved and shown on the next start. Model sheet -> "Camera check" lists every camera's
+capabilities. Test: `python tests/e2e_native.py PHOTO.jpg [SCREENSHOT_DIR]` (mocked native plugin in Chromium).
+
 ## What v2 of the model changes (measured on the 489 real photos)
 * Validated Nord-family models (Nord CE4, AC2001) skip the card correction: error 0.15-0.19 -> 0.10 mg/L
   (Nord leave-one-session-out 0.152 -> 0.105; held-out AC2001 unit 0.185 -> 0.104). Other brands unchanged.
