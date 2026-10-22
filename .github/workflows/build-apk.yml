@@ -19,7 +19,9 @@ jobs:
       # Settings baked into the APK. Set them in: repo Settings -> Secrets and variables -> Actions -> Variables
       - name: Build web assets
         env:
-          UPDATE_MANIFEST_URL: ${{ vars.UPDATE_MANIFEST_URL }}
+          # default: this repo's own model/latest.json (public repo, served with CORS by raw.githubusercontent.com).
+          # Publishing a model update = commit model/latest.json + model/model-vN.json (does not rebuild the app).
+          UPDATE_MANIFEST_URL: ${{ vars.UPDATE_MANIFEST_URL || format('https://raw.githubusercontent.com/{0}/{1}/model/latest.json', github.repository, github.ref_name) }}
           UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
         run: node tools/build_www.mjs
       - run: npx cap sync android
@@ -34,6 +36,7 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          VERSION_CODE: ${{ github.run_number }}
         run: |
           chmod +x gradlew
           if [ "$SIGNED" = "1" ]; then ./gradlew assembleRelease --no-daemon; else ./gradlew assembleDebug --no-daemon; fi
