@@ -522,7 +522,7 @@
           // patches in the wrong order -> negative slope -> silently wrong reading (e.g. -0.6 instead of 1.7).
           // On all 489 real photos the slope is >= 0.45; on 180-degree rotated ones it is always negative.
           if (!(slope > 0.2)) {
-            throw new PipelineError('orientation', 'The reference card reads backwards, so this photo is probably upside down or rotated. Hold the phone the same way round as for your other photos (tube and card in the usual positions) and retake.');
+            throw new PipelineError('orientation', 'The reference card could not be read in the expected order. Usually the photo is rotated or upside down; it can also mean the card is placed differently from the validated setup (tube on the left, card on the right). Retake with the usual layout.');
           }
           // Validated Nord-family models skip the card correction: on them the per-photo card slope is mostly
           // shot-to-shot noise (sd ~0.08-0.12 around 1.0) and applying it raised error from ~0.10 to ~0.15-0.19 mg/L

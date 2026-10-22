@@ -560,3 +560,23 @@ body { padding-top: max(32px, env(safe-area-inset-top)); padding-bottom: max(40p
 .warn-list li::marker { color: var(--err); }
 .warn-actions { margin-top: 14px; } .warn-actions .btn-primary, .warn-actions .btn-secondary { flex: 1 1 140px; margin: 0; }
 .small-toggle { font-size: 13px; font-weight: 500; color: var(--ink-soft); margin: 4px 0 10px; }
+
+/* ---- robustness: narrow phones (320 dp) and large Android font sizes (WebView scales text with the system setting) ---- */
+.result-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.result-grid > * { min-width: 0; }
+@media (max-width: 560px) { .result-grid { grid-template-columns: minmax(0, 1fr); } }
+.card-heading.result-heading { flex-wrap: wrap; row-gap: 8px; }
+.badge { white-space: normal; max-width: 100%; }
+.readout-display { flex-wrap: wrap; row-gap: 0; }
+.detail-row { flex-wrap: wrap; row-gap: 4px; }
+.detail-label, .detail-value { min-width: 0; overflow-wrap: anywhere; }
+.detail-row > .detail-value, .detail-row > .badge { margin-left: auto; }
+h1, .sub, .error-detail, .diag-what, .diag-hint, .photo-note, .sheet-note, .banner-detail, #banner-detail { overflow-wrap: anywhere; }
+.sc-list li { flex-wrap: wrap; row-gap: 2px; }
+.sc-list li b { margin-left: auto; overflow-wrap: anywhere; }
+.sc-icon { width: auto; min-width: 18px; flex-shrink: 0; line-height: 1.2; }
+.btn-primary, .btn-secondary, .btn-capture { white-space: normal; text-align: center; overflow-wrap: anywhere; }
+/* touch targets: at least 44 px (Android guideline 48 dp incl. spacing) */
+.model-chip { min-height: 44px; }
+.btn-x { min-width: 44px; min-height: 44px; }
+.btn-clear { min-height: 44px; }

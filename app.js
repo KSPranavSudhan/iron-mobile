@@ -253,14 +253,17 @@
       if (nativeInfo) {
         const p = nativeInfo.plan || {};
         if (p.mode === 'locked_auto') msgs.push('This phone doesn’t let apps set ISO and shutter exactly, so exposure was measured and locked instead.');
-        for (const w of [].concat(p.notes || [], nativeInfo.warnings || [])) if (!/doesn't let apps set/.test(w)) msgs.push(w + '.');
+        const isoT = (activeInfo().bundle.capture || {}).iso, isoOk = (w) => { const m = /using ISO (\d+)/.exec(w); return m && isoT && isoT.target && +m[1] >= isoT.target[0] && +m[1] <= isoT.target[1]; };
+        for (const w of [].concat(p.notes || [], nativeInfo.warnings || [])) if (!/doesn't let apps set/.test(w) && !isoOk(w)) msgs.push(w + '.');
       }
       if (msgs.length) { note.textContent = msgs.join(' '); note.hidden = false; }
       sel.source = source; sel.override = false; sel.native = nativeInfo || null;
       sel.check = Exif.checkCaptureSettings(exif, activeInfo().bundle.capture, [w, h]);
       renderSettingsCheck();
     } catch (e) {
-      showError('This image could not be opened. Try a JPEG photo.', { code: 'decode', message: e && e.message, file });
+      const heic = /hei[cf]/i.test((file && (file.type + ' ' + file.name)) || '');
+      showError(heic ? 'This photo is in HEIC/HEIF format, which the app can’t read. In your camera settings set the photo format to JPEG (often “High efficiency pictures” → off), then retake.'
+        : 'This image could not be opened. Use the original JPEG photo from the camera.', { code: heic ? 'heic' : 'decode', message: e && e.message, file });
     }
   }
 
@@ -540,12 +543,14 @@
     ds.classList.toggle('badge-ok', !!sc && sc.status === 'ok'); ds.classList.toggle('warn', !sc || sc.status !== 'ok');
     const why = [];
     if (sc && sc.status === 'fail') why.push('taken with ' + sc.items.filter((i) => i.status === 'fail').map((i) => `${i.label.toLowerCase()} ${i.value}`).join(', '));
-    if (data.rotated_by === 180) why.push('upside down (turned 180° to analyse)');
-    else if (data.rotated_by) why.push(`portrait (rotated ${data.rotated_by > 0 ? 'clockwise' : 'counter-clockwise'} to analyse)`);
+    if (data.rotated_by === 90 || data.rotated_by === -90) why.push(`portrait (rotated ${data.rotated_by > 0 ? 'clockwise' : 'counter-clockwise'} to analyse)`);
     if (why.length) {
       ib.classList.add('warn');
-      $('banner-title').textContent = sc && sc.status === 'fail' ? 'Not validated — camera settings differ' : data.rotated_by === 180 ? 'Not validated — photo was upside down' : 'Not validated — portrait photo';
+      $('banner-title').textContent = sc && sc.status === 'fail' ? 'Not validated — camera settings differ' : 'Not validated — portrait photo';
       $('banner-detail').textContent = `This photo was ${why.join(' and ')}, outside what the model was validated on. Treat the reading as indicative only. ${data.warning || ''}`.trim();
+    }
+    if (data.rotated_by === 180) {   // same pixels, just turned: the reading is unaffected, so only say what happened
+      $('banner-detail').textContent = `${$('banner-detail').textContent} The photo was upside down and was turned 180° before analysis (this does not change the reading).`.trim();
     }
     $('detect-meta').textContent = `${data.roi_method} · ${(data.elapsed_ms / 1000).toFixed(1)} s on-device`;
     drawOverlay(data);
@@ -591,6 +596,15 @@
   function resetToCapture() { clearSelectedFile(); resetResultViews(); }
 
   // ---------------------------------------------------------------- boot
+  self.__ironBack = () => {
+    const open = [...document.querySelectorAll('dialog[open]')];
+    if (open.length) { open[open.length - 1].close(); return true; }
+    if (!$('status-line').hidden) return true;                     // busy (analysing / opening camera): ignore
+    if (!$('diag-card').hidden) { $('diag-card').hidden = true; return true; }
+    if (!$('readout-card').hidden || !$('error-card').hidden) { resetToCapture(); return true; }
+    return false;                                                  // home screen: app goes to the background (state kept)
+  };
+
   async function boot() {
     // built-in model ships inside the app
     let builtin;

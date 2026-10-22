@@ -32,7 +32,7 @@ import org.json.JSONObject;
 final class IronCameraSupport {
 
     /** Bump when the native camera code changes (shown in error reports). */
-    static final int NATIVE_VERSION = 2;
+    static final int NATIVE_VERSION = 3;
 
     private IronCameraSupport() {}
 

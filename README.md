@@ -107,18 +107,23 @@ analysis runs on the phone, works in airplane mode, and the only network use is 
 The APK is built by GitHub Actions (no Android Studio needed).
 
 1. Push this folder to a **public** GitHub repo (public so phones can read model updates from `raw.githubusercontent.com`).
-2. Repo -> Settings -> Secrets and variables -> Actions -> **Variables** -> add
-   * `UPDATE_MANIFEST_URL` = `https://raw.githubusercontent.com/<you>/<repo>/main/model/latest.json`
-   * `UPDATE_PUBLIC_KEY` = contents of `public_key.jwk.json` (from `model_tool.py keygen`) -- recommended
+2. Model updates work out of the box: by default the APK checks this repo's own
+   `https://raw.githubusercontent.com/<you>/<repo>/<branch>/model/latest.json`. Optional **Variables**
+   (Settings -> Secrets and variables -> Actions): `UPDATE_MANIFEST_URL` to use another address, and
+   `UPDATE_PUBLIC_KEY` = contents of `public_key.jwk.json` (from `model_tool.py keygen`) to require signed updates (recommended).
 3. *(Recommended)* stable signing key, so a new APK installs over the old one and keeps downloaded model updates. Once:
    `keytool -genkeypair -v -keystore iron.jks -alias iron -keyalg RSA -keysize 2048 -validity 10000`
    then base64 it (`base64 -w0 iron.jks`, on Windows `certutil -encode`) and add **Secrets**: `ANDROID_KEYSTORE_B64`,
    `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (= `iron`). Without them a debug-signed APK is built (works, but you must uninstall before installing a newer build).
+   Every build gets versionCode = the Actions run number, so with the stable key each new APK installs as an update.
 4. Actions tab -> **Build Android APK** -> Run workflow. After ~5 min download the artifact `IronReader-apk` (unzip -> `.apk`).
 5. Send the APK to the phone, open it, allow "install unknown apps" for your file manager/browser, install. First "Take Photo" asks for camera permission.
 
 Model updates never need a rebuild: `python tools/model_tool.py publish ... --out-dir model/`, commit and push `model/`; the phone sees it
 at next launch / "Check for updates". Rebuild the APK only when the detection/feature code changes.
+
+**Android specifics (v3.2):** the back button closes an open sheet / leaves the result screen and otherwise sends the app to the
+background (state kept); the layout is checked at 320-1280 dp widths and 100/130/200 % system font size (`tests/e2e_native.py`).
 
 ## Going further: store-style APK / iOS app
 iOS would need a Mac + Xcode (`npx cap add ios`) and an Apple developer account for installation; the PWA install on iPhone works meanwhile.

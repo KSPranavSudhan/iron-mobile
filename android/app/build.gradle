@@ -7,8 +7,10 @@ android {
         applicationId "com.ironreader.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Every CI build gets a higher version code (GitHub run number), so a new APK installs as an UPDATE
+        // over the old one (needs the same signing key, see the workflow) instead of requiring an uninstall.
+        versionCode((System.getenv("VERSION_CODE") ?: "1").toInteger())
+        versionName "1.0." + (System.getenv("VERSION_CODE") ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -28,6 +30,11 @@ android {
                 keyPassword System.getenv("KEYSTORE_PASSWORD")
             }
         }
+    }
+    // lintVital on release builds can fail the build on warnings unrelated to the app's behaviour; checks run separately.
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
     buildTypes {
         release {

@@ -83,6 +83,7 @@ public class IronCameraActivity extends Activity {
     private volatile boolean finished = false;
     private volatile boolean paused = true;
     private volatile boolean resumedOnce = false;
+    private volatile boolean opening = false;   // an open request is in flight: don't start a second one
     private boolean aeLocked = false, awbLocked = false;
     private int frameCount = 0, lockFrames = 0;
     private volatile int lastDeviceOrientation = OrientationEventListener.ORIENTATION_UNKNOWN;
@@ -165,6 +166,7 @@ public class IronCameraActivity extends Activity {
         }
         cancelTimeout();
         closeCamera();
+        opening = false;   // its callbacks would arrive on the background thread, which stops now; reopen on resume
         state = ST_IDLE;
         aeLocked = false;
         awbLocked = false;
@@ -343,30 +345,35 @@ public class IronCameraActivity extends Activity {
         });
     }
 
-    /** Fit the whole 4:3 frame on screen (letterboxed), so the user sees exactly what the photo will contain. */
+    /**
+     * Fit the whole 4:3 frame on screen (letterboxed) in the area left of the Capture/Cancel column, so the user sees
+     * exactly what the photo will contain and no button covers it. Works for phones (natural portrait) and for tablets
+     * whose natural orientation is landscape, in either landscape direction.
+     */
     private void configureTransform() {
         final IronCameraSupport.Plan p = plan;
         if (p == null || textureView == null || p.preview == null) return;
-        int vw = textureView.getWidth(), vh = textureView.getHeight();
+        float vw = textureView.getWidth(), vh = textureView.getHeight();
         if (vw == 0 || vh == 0) return;
         int rotation = getWindowManager().getDefaultDisplay().getRotation();
-        Matrix m = new Matrix();
-        RectF view = new RectF(0, 0, vw, vh);
-        float cx = view.centerX(), cy = view.centerY();
+        int deg = rotation == Surface.ROTATION_90 ? 90 : rotation == Surface.ROTATION_180 ? 180 : rotation == Surface.ROTATION_270 ? 270 : 0;
         float pw = p.preview.getWidth(), ph = p.preview.getHeight();
-        if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270) {
-            RectF buf = new RectF(0, 0, ph, pw);
-            buf.offset(cx - buf.centerX(), cy - buf.centerY());
-            m.setRectToRect(view, buf, Matrix.ScaleToFit.FILL);
-            float scale = Math.min(vh / ph, vw / pw);
-            m.postScale(scale, scale, cx, cy);
-            m.postRotate(90 * (rotation - 2), cx, cy);
-        } else {
-            float ar = ph / pw;   // portrait content, width/height
-            float dw = Math.min(vw, vh * ar), dh = dw / ar;
-            m.setScale(dw / vw, dh / vh, cx, cy);
-            if (rotation == Surface.ROTATION_180) m.postRotate(180, cx, cy);
-        }
+        // TextureView already turns the camera image upright for the phone's NATURAL orientation and stretches it to the view
+        boolean sensorQuarter = (p.sensorOrientation % 180) != 0;
+        float natW = sensorQuarter ? ph : pw, natH = sensorQuarter ? pw : ph;
+        boolean screenQuarter = (deg % 180) != 0;
+        float shownW = screenQuarter ? natH : natW, shownH = screenQuarter ? natW : natH;   // as it appears on this screen
+        float panel = Math.min(dp(110), vw * 0.25f);
+        float availW = Math.max(vw - panel, vw * 0.5f);
+        float s = Math.min(availW / shownW, vh / shownH);
+        float cx = vw / 2f, cy = vh / 2f;
+        Matrix m = new Matrix();
+        RectF nat = new RectF(0, 0, natW, natH);
+        nat.offset(cx - nat.centerX(), cy - nat.centerY());
+        m.setRectToRect(new RectF(0, 0, vw, vh), nat, Matrix.ScaleToFit.FILL);   // undo the stretch
+        m.postScale(s, s, cx, cy);                                               // fit
+        if (deg != 0) m.postRotate(-deg, cx, cy);                                // undo the screen rotation
+        m.postTranslate((availW - vw) / 2f, 0);                                  // centre in the area left of the buttons
         textureView.setTransform(m);
     }
 
@@ -406,7 +413,8 @@ public class IronCameraActivity extends Activity {
 
     // ================================================================== camera open / session / preview
     private void openCamera() {
-        if (finished || camera != null || bg == null) return;
+        if (finished || camera != null || opening || bg == null) return;
+        opening = true;
         setStep("open");
         bg.post(new Runnable() {
             @Override
@@ -452,6 +460,7 @@ public class IronCameraActivity extends Activity {
     private final CameraDevice.StateCallback deviceCallback = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(CameraDevice cd) {
+            opening = false;
             cancelTimeout();
             if (finished || paused) {
                 cd.close();
@@ -464,6 +473,7 @@ public class IronCameraActivity extends Activity {
 
         @Override
         public void onDisconnected(CameraDevice cd) {
+            opening = false;
             cd.close();
             camera = null;
             if (!paused) fail("E-CAM-DISCONNECTED", "The camera was disconnected (another app may have taken it)", null);
@@ -471,6 +481,7 @@ public class IronCameraActivity extends Activity {
 
         @Override
         public void onError(CameraDevice cd, int error) {
+            opening = false;
             cd.close();
             camera = null;
             String[] names = { "", "camera in use", "too many cameras open", "camera disabled by policy", "camera device error", "camera service error" };
@@ -834,6 +845,7 @@ public class IronCameraActivity extends Activity {
 
     /** Return a coded error (with the camera log and plan) to the app, which shows it on screen. */
     private void fail(String code, String message, Throwable t) {
+        opening = false;
         if (finished) return;
         if (paused && resumedOnce && !code.startsWith("E-CAM-PERM")) {
             // the camera is closed on purpose when the app goes to the background; it is reopened on return
